@@ -1,11 +1,18 @@
+/*
+    D advanced binding for Duktape.
+
+    It add automatic registration of D objects.
+*/
 import std.stdio;
 import etc.c.duktape;
 
 
+/** Advanced duk context. */
 final class DukContext
 {
     import std.traits;
-    import std.string : toStringz;
+    import std.conv : to;
+    import std.string : toStringz, fromStringz;
 
 private:
     duk_context *_ctx;
@@ -29,7 +36,6 @@ public:
     void registerFunction(alias Func)(string name = __traits(identifier, Func)) if (isFunction!Func)
     {
         auto externFunc = generateExternDukFunc!Func;
-
         duk_push_c_function(_ctx, externFunc, Parameters!Func.length /*nargs*/);
         duk_put_global_string(_ctx, name.toStringz());
     }
@@ -42,23 +48,21 @@ public:
     /// Utility method to get a type on the stack.
     private static T dukGetType(T)(duk_context *ctx, int idx)
     {
-        static if (is(T == int)) {
-            return duk_get_int(ctx, idx);
-        }
-        else {
-            static assert(false, T.stringof ~ " is not handled");
-        }
+        static if (is(T == int))    return duk_get_int(ctx, idx);
+        static if (is(T == bool))   return duk_get_boolean(ctx, idx);
+        static if (is(T == float))  return duk_get_number(ctx, idx);
+        static if (is(T == double)) return duk_get_number(ctx, idx);
+        static if (is(T == string)) return fromStringz(duk_get_string(ctx, idx)).to!string;
     }
 
     /// Utility method to push a type on the stack.
     private static void dukPushType(T)(duk_context *ctx, T value)
     {
-        static if (is(T == int)) {
-            duk_push_int(ctx, value);
-        }
-        else {
-            static assert(false, T.stringof ~ " is not handled");
-        }
+        static if (is(T == int))    duk_push_int(ctx, value);
+        static if (is(T == bool))   duk_push_boolean(ctx, value);
+        static if (is(T == float))  duk_push_number(ctx, value);
+        static if (is(T == double)) duk_push_number(ctx, value);
+        static if (is(T == string)) duk_push_string(ctx, value.toStringz());
     }
 
     auto generateExternDukFunc(alias Func)() if (isFunction!Func)
@@ -75,7 +79,7 @@ public:
             // create a tuple of arguments
             Tuple!(Parameters!Func) args;
             static foreach(i, ArgType; Parameters!Func) {
-                args[i] = dukGetType!int(ctx, i);
+                args[i] = dukGetType!ArgType(ctx, i);
             }
 
             // call the function
@@ -94,6 +98,7 @@ public:
     }
 }
 
+///
 unittest
 {
     static int add(int a, int b) {
@@ -101,8 +106,23 @@ unittest
     }
 
     auto ctx = new DukContext();
-    ctx.registerFunction!add();
+    ctx.registerFunction!add;
 
     ctx.evalString("add(1, 5)");
     assert(ctx.get!int(-1) == 6);
+}
+
+///
+unittest
+{
+    static string capitalize(string s) {
+        import std.string : capitalize;
+        return s.capitalize();
+    }
+
+    auto ctx = new DukContext();
+    ctx.registerFunction!capitalize;
+
+    ctx.evalString(`capitalize("hEllO")`);
+    assert(ctx.get!string(-1) == "Hello");
 }
