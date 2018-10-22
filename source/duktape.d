@@ -1,27 +1,6 @@
 import std.stdio;
 import etc.c.duktape;
 
-extern(C) duk_ret_t native_print(duk_context *ctx) {
-  printf("from D app: %s\n", duk_to_string(ctx, 0));
-  return 0;  /* no return value (= undefined) */
-}
-
-/* Adder: add argument values. */
-extern(C) duk_ret_t native_adder(duk_context *ctx) {
-  int i;
-  int n = duk_get_top(ctx);  /* #args */
-  double res = 0.0;
-
-  for (i = 0; i < n; i++) {
-    res += duk_to_number(ctx, i);
-  }
-
-  duk_push_number(ctx, res);
-  return 1;  /* one return value */
-}
-
-
-
 
 final class DukContext
 {
@@ -117,13 +96,13 @@ public:
 
 unittest
 {
-	auto ctx = new DukContext();
-	ctx.registerFunction!add("add");
+    static int add(int a, int b) {
+        return a + b;
+    }
+
+    auto ctx = new DukContext();
+    ctx.registerFunction!add("add");
 
     ctx.evalString("add(1, 5)");
     assert(ctx.get!int(-1) == 6);
-}
-
-int add(int a, int b) {
-    return a + b;
 }
