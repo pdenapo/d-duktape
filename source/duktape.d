@@ -5,6 +5,7 @@
 */
 import std.stdio;
 import etc.c.duktape;
+import std.string : toStringz, fromStringz;
 
 
 /** Advanced duk context. */
@@ -12,10 +13,12 @@ final class DukContext
 {
     import std.traits;
     import std.conv : to;
-    import std.string : toStringz, fromStringz;
 
 private:
     duk_context *_ctx;
+
+    @property duk_context* raw() { return _ctx; }
+
 public:
     this()
     {
@@ -32,21 +35,23 @@ public:
         duk_eval_string(_ctx, js.toStringz());
     }
 
-    void registerGlobal(alias Func)(string name = __traits(identifier, Func))
+    DukContext registerGlobal(alias Symbol)(string name = __traits(identifier, Symbol))
     {
-        register!Func(name);
+        register!Symbol(name);
         duk_put_global_string(_ctx, name.toStringz());
+        return this;
     }
 
     /// Automatic registration of D function.
-    void register(alias Func)(string name = __traits(identifier, Func)) if (isFunction!Func)
+    DukContext register(alias Func)(string name = __traits(identifier, Func)) if (isFunction!Func)
     {
         auto externFunc = generateExternDukFunc!Func;
         duk_push_c_function(_ctx, externFunc, Parameters!Func.length /*nargs*/);
+        return this;
     }
 
     /// Automatic registration of D enum.
-    void register(alias Enum)(string name = __traits(identifier, Enum)) if (is(Enum == enum))
+    DukContext register(alias Enum)(string name = __traits(identifier, Enum)) if (is(Enum == enum))
     {
         alias EnumBaseType = OriginalType!Enum;
 
@@ -58,6 +63,12 @@ public:
             this.push!EnumBaseType(_ctx, cast(EnumBaseType) Member); // push value
             duk_put_prop_string(_ctx, arr_idx, to!string(Member).toStringz()); // push string prop
         }
+        return this;
+    }
+
+    NamespaceContext createNamespace(string name)
+    {
+        return new NamespaceContext(this, name);
     }
 
     T get(T)(int idx = -1)
@@ -115,6 +126,36 @@ public:
         }
 
         return &func;
+    }
+}
+
+final class NamespaceContext
+{
+private:
+    DukContext _ctx;
+    string _name;
+    duk_idx_t _arrIdx;
+
+public:
+    this(DukContext ctx, string name)
+    {
+        _ctx = ctx;
+        _name = name;
+
+        // a namespace is a js array
+        _arrIdx = duk_push_array(_ctx.raw);
+    }
+
+    NamespaceContext register(alias Symbol)(string name = __traits(identifier, Symbol))
+    {
+        _ctx.register!Symbol(name);
+        duk_put_prop_string(_ctx.raw, _arrIdx, name.toStringz()); // push string prop
+        return this;
+    }
+
+    void finalize()
+    {
+        duk_put_global_string(_ctx.raw, _name.toStringz());
     }
 }
 
@@ -177,7 +218,10 @@ unittest
 
     auto ctx = new DukContext();
 
-    //ctx.namespace("Work", () {
-    //   ctx.register!Direction;
-    //});
+    ctx.createNamespace("Work")
+        .register!Direction
+        .finalize();
+
+    ctx.evalString("Work.Direction.down");
+    assert(ctx.get!int() == 1);
 }
