@@ -33,20 +33,36 @@ public:
     }
 
     /// Automatic registration of D function.
-    void registerFunction(alias Func)(string name = __traits(identifier, Func)) if (isFunction!Func)
+    void register(alias Func)(string name = __traits(identifier, Func)) if (isFunction!Func)
     {
         auto externFunc = generateExternDukFunc!Func;
         duk_push_c_function(_ctx, externFunc, Parameters!Func.length /*nargs*/);
         duk_put_global_string(_ctx, name.toStringz());
     }
 
-    T get(T)(int idx)
+    /// Automatic registration of D enum.
+    void register(alias Enum)(string name = __traits(identifier, Enum)) if (is(Enum == enum))
     {
-        return dukGetType!T(_ctx, idx);
+        alias EnumBaseType = OriginalType!Enum;
+
+        duk_idx_t arr_idx;
+        arr_idx = duk_push_array(_ctx);
+
+        // push a js array
+        static foreach(Member; [EnumMembers!Enum]) {
+            this.push!EnumBaseType(_ctx, cast(EnumBaseType) Member); // push value
+            duk_put_prop_string(_ctx, arr_idx, to!string(Member).toStringz()); // push string prop
+        }
+        duk_put_global_string(_ctx, name.toStringz()); // push enum name
+    }
+
+    T get(T)(int idx = -1)
+    {
+        return get!T(_ctx, idx);
     }
 
     /// Utility method to get a type on the stack.
-    private static T dukGetType(T)(duk_context *ctx, int idx)
+    private static T get(T)(duk_context *ctx, int idx)
     {
         static if (is(T == int))    return duk_get_int(ctx, idx);
         static if (is(T == bool))   return duk_get_boolean(ctx, idx);
@@ -56,7 +72,7 @@ public:
     }
 
     /// Utility method to push a type on the stack.
-    private static void dukPushType(T)(duk_context *ctx, T value)
+    private static void push(T)(duk_context *ctx, T value)
     {
         static if (is(T == int))    duk_push_int(ctx, value);
         static if (is(T == bool))   duk_push_boolean(ctx, value);
@@ -79,7 +95,7 @@ public:
             // create a tuple of arguments
             Tuple!(Parameters!Func) args;
             static foreach(i, ArgType; Parameters!Func) {
-                args[i] = dukGetType!ArgType(ctx, i);
+                args[i] = get!ArgType(ctx, i);
             }
 
             // call the function
@@ -88,7 +104,7 @@ public:
             }
             else {
                 ReturnType!Func ret = Func(args.expand);
-                dukPushType(ctx, ret);
+                push(ctx, ret);
             }
 
             return 1; // one return value
@@ -106,7 +122,7 @@ unittest
     }
 
     auto ctx = new DukContext();
-    ctx.registerFunction!add;
+    ctx.register!add;
 
     ctx.evalString("add(1, 5)");
     assert(ctx.get!int(-1) == 6);
@@ -121,8 +137,27 @@ unittest
     }
 
     auto ctx = new DukContext();
-    ctx.registerFunction!capitalize;
+    ctx.register!capitalize;
 
     ctx.evalString(`capitalize("hEllO")`);
     assert(ctx.get!string(-1) == "Hello");
+}
+
+/// register!Enum
+unittest
+{
+    enum Direction
+    {
+        up,
+        down
+    }
+
+    auto ctx = new DukContext();
+    ctx.register!Direction;
+
+    ctx.evalString("Direction['up']");
+    assert(ctx.get!int() == 0);
+
+    ctx.evalString("Direction['down']");
+    assert(ctx.get!int() == 1);
 }
