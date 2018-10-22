@@ -32,12 +32,17 @@ public:
         duk_eval_string(_ctx, js.toStringz());
     }
 
+    void registerGlobal(alias Func)(string name = __traits(identifier, Func))
+    {
+        register!Func(name);
+        duk_put_global_string(_ctx, name.toStringz());
+    }
+
     /// Automatic registration of D function.
     void register(alias Func)(string name = __traits(identifier, Func)) if (isFunction!Func)
     {
         auto externFunc = generateExternDukFunc!Func;
         duk_push_c_function(_ctx, externFunc, Parameters!Func.length /*nargs*/);
-        duk_put_global_string(_ctx, name.toStringz());
     }
 
     /// Automatic registration of D enum.
@@ -53,7 +58,6 @@ public:
             this.push!EnumBaseType(_ctx, cast(EnumBaseType) Member); // push value
             duk_put_prop_string(_ctx, arr_idx, to!string(Member).toStringz()); // push string prop
         }
-        duk_put_global_string(_ctx, name.toStringz()); // push enum name
     }
 
     T get(T)(int idx = -1)
@@ -122,7 +126,7 @@ unittest
     }
 
     auto ctx = new DukContext();
-    ctx.register!add;
+    ctx.registerGlobal!add;
 
     ctx.evalString("add(1, 5)");
     assert(ctx.get!int(-1) == 6);
@@ -137,7 +141,7 @@ unittest
     }
 
     auto ctx = new DukContext();
-    ctx.register!capitalize;
+    ctx.registerGlobal!capitalize;
 
     ctx.evalString(`capitalize("hEllO")`);
     assert(ctx.get!string(-1) == "Hello");
@@ -153,11 +157,27 @@ unittest
     }
 
     auto ctx = new DukContext();
-    ctx.register!Direction;
+    ctx.registerGlobal!Direction;
 
     ctx.evalString("Direction['up']");
     assert(ctx.get!int() == 0);
 
     ctx.evalString("Direction['down']");
     assert(ctx.get!int() == 1);
+}
+
+/// namespace
+unittest
+{
+    enum Direction
+    {
+        up,
+        down
+    }
+
+    auto ctx = new DukContext();
+
+    //ctx.namespace("Work", () {
+    //   ctx.register!Direction;
+    //});
 }
