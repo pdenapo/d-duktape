@@ -1,0 +1,5 @@
+*.exe
+*.o
+*.obj
+*.lst
+libduktape.a

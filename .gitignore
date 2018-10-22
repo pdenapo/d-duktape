@@ -1,0 +1,16 @@
+.dub
+.idea
+docs.json
+__dummy.html
+docs/
+d-duktape.so
+d-duktape.dylib
+d-duktape.dll
+d-duktape.a
+d-duktape.lib
+d-duktape-test-*
+*.exe
+*.o
+*.obj
+*.lst
+d-duktape.iml
