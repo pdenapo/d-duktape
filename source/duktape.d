@@ -26,7 +26,7 @@ public:
     }
 
     /// Automatic registration of D function.
-    void registerFunction(alias Func)(string name) if (isFunction!Func)
+    void registerFunction(alias Func)(string name = __traits(identifier, Func)) if (isFunction!Func)
     {
         auto externFunc = generateExternDukFunc!Func;
 
@@ -101,7 +101,7 @@ unittest
     }
 
     auto ctx = new DukContext();
-    ctx.registerFunction!add("add");
+    ctx.registerFunction!add();
 
     ctx.evalString("add(1, 5)");
     assert(ctx.get!int(-1) == 6);
