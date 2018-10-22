@@ -129,12 +129,14 @@ public:
     }
 }
 
+/// Namespace support
 final class NamespaceContext
 {
 private:
     DukContext _ctx;
     string _name;
     duk_idx_t _arrIdx;
+    bool _finalized = false;
 
 public:
     this(DukContext ctx, string name)
@@ -144,6 +146,12 @@ public:
 
         // a namespace is a js array
         _arrIdx = duk_push_array(_ctx.raw);
+    }
+
+    ~this()
+    {
+        if (!_finalized)
+            finalize();
     }
 
     NamespaceContext register(alias Symbol)(string name = __traits(identifier, Symbol))
@@ -156,6 +164,7 @@ public:
     void finalize()
     {
         duk_put_global_string(_ctx.raw, _name.toStringz());
+        _finalized = true;
     }
 }
 
@@ -224,4 +233,26 @@ unittest
 
     ctx.evalString("Work.Direction.down");
     assert(ctx.get!int() == 1);
+}
+
+/// class
+unittest
+{
+    class Foo
+    {
+        this()
+        {
+            writeln("const");
+        }
+
+        ~this()
+        {
+            writeln("dest");
+        }
+    }
+
+    auto ctx = new DukContext();
+
+ //   ctx.register!Foo;
+
 }
