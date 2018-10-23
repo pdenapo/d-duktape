@@ -19,6 +19,9 @@ private:
 
     @property duk_context* raw() { return _ctx; }
 
+    enum AllMembers(alias Symbol) = __traits(allMembers, Symbol);
+    enum Protection(alias Symbol) = __traits(getProtection, Symbol);
+
 public:
     this()
     {
@@ -63,6 +66,34 @@ public:
             this.push!EnumBaseType(_ctx, cast(EnumBaseType) Member); // push value
             duk_put_prop_string(_ctx, arr_idx, to!string(Member).toStringz()); // push string prop
         }
+        return this;
+    }
+
+    /// Automatic registration of D class.
+    DukContext register(alias Class)(string name = __traits(identifier, Class)) if (is(Class == class))
+    {
+        import std.algorithm: canFind;
+
+        enum MemberToIgnore = [
+            "__ctor", "__dtor", "this",
+            "__xdtor", "toString", "toHash", "opCmp",
+            "opEquals", "Monitor", "factory",
+        ];
+        enum Members = [AllMembers!Class];
+
+        duk_idx_t obj_idx;
+        obj_idx = duk_push_object(_ctx);
+
+        // register methods
+        static foreach(Method; Members) {
+            static if (Protection!Method == "public") {
+                static if (!MemberToIgnore.canFind(Method)) {
+                    pragma(msg, Method);
+                    this.register!Method;
+                }
+            }
+        }
+
         return this;
     }
 
@@ -249,10 +280,12 @@ unittest
         {
             writeln("dest");
         }
+
+        int add(int a, int b) { return a + b; }
     }
 
     auto ctx = new DukContext();
 
- //   ctx.register!Foo;
+    ctx.register!Foo;
 
 }
