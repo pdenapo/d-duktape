@@ -6,21 +6,24 @@
 import std.stdio;
 import etc.c.duktape;
 import std.string : toStringz, fromStringz;
+import std.traits;
 
+enum AllMembers(alias Symbol) = __traits(allMembers, Symbol);
+enum Protection(alias Symbol) = __traits(getProtection, Symbol);
+enum Member(alias Symbol, string n) = __traits(getMember, Symbol, n);
+enum Identifier(alias Symbol) = __traits(identifier, Symbol);
+
+static bool IsPublic(alias Symbol)() { return Protection!Symbol == "public"; }
 
 /** Advanced duk context. */
 final class DukContext
 {
-    import std.traits;
     import std.conv : to;
 
 private:
     duk_context *_ctx;
 
     @property duk_context* raw() { return _ctx; }
-
-    enum AllMembers(alias Symbol) = __traits(allMembers, Symbol);
-    enum Protection(alias Symbol) = __traits(getProtection, Symbol);
 
 public:
     this()
@@ -38,7 +41,7 @@ public:
         duk_eval_string(_ctx, js.toStringz());
     }
 
-    DukContext registerGlobal(alias Symbol)(string name = __traits(identifier, Symbol))
+    DukContext registerGlobal(alias Symbol)(string name = Identifier!Symbol)
     {
         register!Symbol(name);
         duk_put_global_string(_ctx, name.toStringz());
@@ -46,7 +49,7 @@ public:
     }
 
     /// Automatic registration of D function.
-    DukContext register(alias Func)(string name = __traits(identifier, Func)) if (isFunction!Func)
+    DukContext register(alias Func)(string name = Identifier!Func) if (isFunction!Func)
     {
         auto externFunc = generateExternDukFunc!Func;
         duk_push_c_function(_ctx, externFunc, Parameters!Func.length /*nargs*/);
@@ -54,7 +57,7 @@ public:
     }
 
     /// Automatic registration of D enum.
-    DukContext register(alias Enum)(string name = __traits(identifier, Enum)) if (is(Enum == enum))
+    DukContext register(alias Enum)(string name = Identifier!Enum) if (is(Enum == enum))
     {
         alias EnumBaseType = OriginalType!Enum;
 
@@ -70,29 +73,71 @@ public:
     }
 
     /// Automatic registration of D class.
-    DukContext register(alias Class)(string name = __traits(identifier, Class)) if (is(Class == class))
+    DukContext register(alias Class)(string name = Identifier!Class) if (is(Class == class))
     {
         import std.algorithm: canFind;
 
         enum MemberToIgnore = [
             "__ctor", "__dtor", "this",
-            "__xdtor", "toString", "toHash", "opCmp",
+            "__xdtor", "toHash", "opCmp",
             "opEquals", "Monitor", "factory",
         ];
-        enum Members = [AllMembers!Class];
+        enum Members = AllMembers!Class;
 
-        duk_idx_t obj_idx;
-        obj_idx = duk_push_object(_ctx);
+        //duk_idx_t obj_idx;
+        //obj_idx = duk_push_object(_ctx);
 
-        // register methods
+        // create constructor function
+        auto dukContructor = this.generateExternDukConstructor!Class;
+        duk_push_c_function(_ctx, dukContructor,
+            Parameters!(__traits(getMember, Class.init, "__ctor")).length);
+
+        /* Push MyObject.prototype object. */
+        duk_push_object(_ctx);
+
+        Class base;
+        // push prototype methods
         static foreach(Method; Members) {
-            static if (Protection!Method == "public") {
-                static if (!MemberToIgnore.canFind(Method)) {
-                    pragma(msg, Method);
-                    this.register!Method;
+            static if (IsPublic!Method && !MemberToIgnore.canFind(Method)) {
+                static if (isFunction!(__traits(getMember, base, Method))) {
+                    // pragma(msg, Parameters!(__traits(getMember, Class.init, Method)));
+
+                    duk_push_c_function(_ctx,
+                        generateExternDukMethod!(Class, __traits(getMember, Class.init, Method)),
+                        Parameters!(__traits(getMember, Class.init, Method)).length /*nargs*/);
+                    duk_put_prop_string(_ctx, -2, Method);
                 }
             }
         }
+
+         /* Set MyObject.prototype = proto */
+        duk_put_prop_string(_ctx, -2, "prototype");
+
+/*
+        // Create a prototype with toString and all other functions
+        duk_push_object(ctx);
+        duk_put_function_list(ctx, -1, methods);
+        duk_put_prop_string(ctx, -2, "prototype");
+
+        // Now store the Point function as a global
+        duk_put_global_string(ctx, "Point");
+
+        if (duk_peval_string(ctx, "p = new Point(20, 40); print(p)") != 0) {
+            std::cerr << "error: " << duk_to_string(ctx, -1) << std::endl;
+            std::exit(1);
+        }
+        */
+
+        static foreach (mem; __traits(allMembers, Class))
+        {
+            static if (mem != "this")
+            {
+
+            }
+        }
+        // https://wiki.duktape.org/HowtoNativeConstructor.html
+        // register methods
+
 
         return this;
     }
@@ -145,15 +190,134 @@ public:
             }
 
             // call the function
-            if (is(ReturnType!Func == void)) {
-                // TODO: handle void
+            static if (is(ReturnType!Func == void)) {
+                Func(args.expand);
+                return 0;
             }
             else {
                 ReturnType!Func ret = Func(args.expand);
                 push(ctx, ret);
+                return 1; // one return value
+            }
+        }
+
+        return &func;
+    }
+
+    auto generateExternDukMethod(alias Class, alias Method)() if (is(Class == class) && isFunction!Method)
+    {
+        import std.typecons;
+
+        extern(C) static duk_ret_t func(duk_context *ctx) {
+            duk_push_this(ctx);
+            duk_get_prop_string(ctx, -1, "___data___");
+            void* addr = duk_to_pointer(ctx, -1);
+            duk_pop(ctx);
+            duk_pop(ctx); // deleted
+
+            Class instance = cast(Class) addr;
+
+            int n = duk_get_top(ctx);  // number of args
+
+            // check parameter count
+            if (n != Parameters!Method.length)
+                return DUK_RET_RANGE_ERROR;
+
+            // create a tuple of arguments
+            Tuple!(Parameters!Method) args;
+            static foreach(i, ArgType; Parameters!Method) {
+                args[i] = get!ArgType(ctx, i);
             }
 
-            return 1; // one return value
+            // call the method
+            static if (is(ReturnType!Method == void)) {
+                __traits(getMember, instance, Identifier!Method)(args.expand);
+                return 0;
+            }
+            else {
+                ReturnType!Method ret = __traits(getMember, instance, Identifier!Method)(args.expand);
+                push(ctx, ret);
+                return 1; // one return value
+            }
+        }
+
+        return &func;
+    }
+
+    auto generateExternDukConstructor(alias Class)() if (is(Class == class))
+    {
+        import std.typecons;
+        import core.memory;
+
+        extern(C) static duk_ret_t func(duk_context *ctx) {
+            if (!duk_is_constructor_call(ctx)) {
+                return DUK_RET_TYPE_ERROR;
+            }
+
+            // check constructor parameter count
+            int n = duk_get_top(ctx);  // number of args
+            if (n != Parameters!(__traits(getMember, Class.init, "__ctor")).length)
+                return DUK_RET_RANGE_ERROR;
+
+            // create a tuple of arguments
+            Tuple!(Parameters!(__traits(getMember, Class.init, "__ctor"))) args;
+            static foreach(i, ArgType; Parameters!(__traits(getMember, Class.init, "__ctor"))) {
+                args[i] = get!ArgType(ctx, i);
+            }
+
+            // Push special this binding to the function being constructed
+            duk_push_this(ctx);
+
+            // instanciate class @nogc
+            // lifetime is managed by j
+            auto instance = new Class(args.expand);
+            GC.removeRoot(cast(void*) instance);
+
+            // Store the underlying object
+            duk_push_pointer(ctx, cast(void*) instance);
+            duk_put_prop_string(ctx, -2, "___data___");
+
+            // Store a boolean flag to mark the object as deleted because the destructor may be called several times
+            duk_push_boolean(ctx, false);
+            duk_put_prop_string(ctx, -2, "___deleted___");
+
+            auto classDestructor = generateExternDukDestructor!Class(ctx);
+
+            // Store the function destructor
+            duk_push_c_function(ctx, classDestructor, 1);
+            duk_set_finalizer(ctx, -2);
+
+            return 0;
+        }
+
+        return &func;
+    }
+
+    static auto generateExternDukDestructor(alias Class)(duk_context *ctx) if (is(Class == class))
+    {
+        import std.typecons;
+
+        extern(C) static duk_ret_t func(duk_context *ctx) {
+            // The object to delete is passed as first argument instead
+            duk_get_prop_string(ctx, 0, "___deleted___");
+
+            bool deleted = (duk_to_boolean(ctx, -1) != 0);
+            duk_pop(ctx);
+
+            if (!deleted) {
+                duk_get_prop_string(ctx, 0, "___data___");
+                void* addr = duk_to_pointer(ctx, -1);
+                duk_pop(ctx);
+
+                Class instance = cast(Class) addr;
+                destroy(instance);
+
+                // Mark as deleted
+                duk_push_boolean(ctx, true);
+                duk_put_prop_string(ctx, 0, "___deleted___");
+            }
+
+            return 0;
         }
 
         return &func;
@@ -185,7 +349,7 @@ public:
             finalize();
     }
 
-    NamespaceContext register(alias Symbol)(string name = __traits(identifier, Symbol))
+    NamespaceContext register(alias Symbol)(string name = Identifier!Symbol)
     {
         _ctx.register!Symbol(name);
         duk_put_prop_string(_ctx.raw, _arrIdx, name.toStringz()); // push string prop
@@ -266,26 +430,34 @@ unittest
     assert(ctx.get!int() == 1);
 }
 
+class Point
+{
+    float x;
+    float y;
+
+    this(float x, float y)
+    {
+        this.x = x;
+        this.y = y;
+    }
+
+    ~this()
+    {
+    }
+
+    override string toString()
+    {
+        import std.conv : to;
+        return "(" ~ to!string(x) ~ ", " ~ to!string(y) ~ ")";
+    }
+}
+
 /// class
 unittest
 {
-    class Foo
-    {
-        this()
-        {
-            writeln("const");
-        }
-
-        ~this()
-        {
-            writeln("dest");
-        }
-
-        int add(int a, int b) { return a + b; }
-    }
-
     auto ctx = new DukContext();
+    ctx.registerGlobal!Point;
 
-    ctx.register!Foo;
-
+    ctx.evalString("p = new Point(20, 40); p.toString()");
+    assert(ctx.get!string() == "(20, 40)");
 }
