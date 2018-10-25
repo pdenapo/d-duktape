@@ -25,6 +25,9 @@ private:
 
     @property duk_context* raw() { return _ctx; }
 
+    static immutable string CLASS_DATA_PROP = "___data___";
+    static immutable string CLASS_DELETED_PROP = "___deleted___";
+
 public:
     this()
     {
@@ -84,9 +87,6 @@ public:
         ];
         enum Members = AllMembers!Class;
 
-        //duk_idx_t obj_idx;
-        //obj_idx = duk_push_object(_ctx);
-
         // create constructor function
         auto dukContructor = this.generateExternDukConstructor!Class;
         duk_push_c_function(_ctx, dukContructor,
@@ -113,32 +113,6 @@ public:
          /* Set MyObject.prototype = proto */
         duk_put_prop_string(_ctx, -2, "prototype");
 
-/*
-        // Create a prototype with toString and all other functions
-        duk_push_object(ctx);
-        duk_put_function_list(ctx, -1, methods);
-        duk_put_prop_string(ctx, -2, "prototype");
-
-        // Now store the Point function as a global
-        duk_put_global_string(ctx, "Point");
-
-        if (duk_peval_string(ctx, "p = new Point(20, 40); print(p)") != 0) {
-            std::cerr << "error: " << duk_to_string(ctx, -1) << std::endl;
-            std::exit(1);
-        }
-        */
-
-        static foreach (mem; __traits(allMembers, Class))
-        {
-            static if (mem != "this")
-            {
-
-            }
-        }
-        // https://wiki.duktape.org/HowtoNativeConstructor.html
-        // register methods
-
-
         return this;
     }
 
@@ -153,13 +127,19 @@ public:
     }
 
     /// Utility method to get a type on the stack.
-    private static T get(T)(duk_context *ctx, int idx)
+    private static T get(T)(duk_context *ctx, int idx = -1)
     {
         static if (is(T == int))    return duk_get_int(ctx, idx);
         static if (is(T == bool))   return duk_get_boolean(ctx, idx);
         static if (is(T == float))  return duk_get_number(ctx, idx);
         static if (is(T == double)) return duk_get_number(ctx, idx);
         static if (is(T == string)) return fromStringz(duk_get_string(ctx, idx)).to!string;
+        static if (is(T == class)) {
+            duk_get_prop_string(ctx, idx, CLASS_DATA_PROP.toStringz());
+            void* addr = duk_get_pointer(ctx, -1);
+            duk_pop(ctx);  // pop CLASS_DATA_PROP
+            return cast(T) addr;
+        }
     }
 
     /// Utility method to push a type on the stack.
@@ -210,10 +190,10 @@ public:
 
         extern(C) static duk_ret_t func(duk_context *ctx) {
             duk_push_this(ctx);
-            duk_get_prop_string(ctx, -1, "___data___");
-            void* addr = duk_to_pointer(ctx, -1);
-            duk_pop(ctx);
-            duk_pop(ctx); // deleted
+            duk_get_prop_string(ctx, -1, CLASS_DATA_PROP.toStringz());
+            void* addr = duk_get_pointer(ctx, -1);
+
+            duk_pop_2(ctx); // pop prop and this
 
             Class instance = cast(Class) addr;
 
@@ -275,17 +255,19 @@ public:
 
             // Store the underlying object
             duk_push_pointer(ctx, cast(void*) instance);
-            duk_put_prop_string(ctx, -2, "___data___");
+            duk_put_prop_string(ctx, -2, CLASS_DATA_PROP.toStringz());
 
             // Store a boolean flag to mark the object as deleted because the destructor may be called several times
             duk_push_boolean(ctx, false);
-            duk_put_prop_string(ctx, -2, "___deleted___");
+            duk_put_prop_string(ctx, -2, CLASS_DELETED_PROP.toStringz());
 
             auto classDestructor = generateExternDukDestructor!Class(ctx);
 
             // Store the function destructor
             duk_push_c_function(ctx, classDestructor, 1);
             duk_set_finalizer(ctx, -2);
+
+            duk_pop(ctx); // pop this
 
             return 0;
         }
@@ -299,13 +281,13 @@ public:
 
         extern(C) static duk_ret_t func(duk_context *ctx) {
             // The object to delete is passed as first argument instead
-            duk_get_prop_string(ctx, 0, "___deleted___");
+            duk_get_prop_string(ctx, 0, CLASS_DELETED_PROP.toStringz());
 
             bool deleted = (duk_to_boolean(ctx, -1) != 0);
             duk_pop(ctx);
 
             if (!deleted) {
-                duk_get_prop_string(ctx, 0, "___data___");
+                duk_get_prop_string(ctx, 0, CLASS_DATA_PROP.toStringz());
                 void* addr = duk_to_pointer(ctx, -1);
                 duk_pop(ctx);
 
@@ -314,7 +296,7 @@ public:
 
                 // Mark as deleted
                 duk_push_boolean(ctx, true);
-                duk_put_prop_string(ctx, 0, "___deleted___");
+                duk_put_prop_string(ctx, 0, CLASS_DELETED_PROP.toStringz());
             }
 
             return 0;
@@ -439,6 +421,7 @@ class Point
     {
         this.x = x;
         this.y = y;
+
     }
 
     ~this()
@@ -455,9 +438,25 @@ class Point
 /// class
 unittest
 {
+    static void inc(Point p) {
+        p.x++;
+        p.y++;
+    }
+
     auto ctx = new DukContext();
     ctx.registerGlobal!Point;
+    ctx.registerGlobal!inc;
 
-    ctx.evalString("p = new Point(20, 40); p.toString()");
-    assert(ctx.get!string() == "(20, 40)");
+    //ctx.evalString("p = new Point(20, 40); p.toString()");
+    //assert(ctx.get!string() == "(20, 40)");
+
+    ctx.evalString("p1 = new Point(20, 40);" ~
+        "p1.toString();" ~
+        "p2 = new Point(10, 20);" ~
+        "p2.toString();" ~
+        "inc(p2);" ~
+        "p2.toString();"
+    );
+
+    assert(ctx.get!string() == "(11, 21)");
 }
