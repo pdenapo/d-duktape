@@ -16,6 +16,15 @@ enum Identifier(alias Symbol) = __traits(identifier, Symbol);
 
 static bool IsPublic(alias Symbol)() { return Protection!Symbol == "public"; }
 
+
+class DukContextException : Exception
+{
+    this(string msg, string file = __FILE__, size_t line = __LINE__) {
+        super(msg, file, line);
+    }
+}
+
+
 /** Advanced duk context. */
 final class DukContext
 {
@@ -24,14 +33,21 @@ final class DukContext
 
 private:
     duk_context *_ctx;
-    static immutable string CLASS_DATA_PROP = "\xFF" ~ "objPtr"; /// "\xFF" mean to hide property
-    static immutable string CLASS_DELETED_PROP = "\xFF" ~ "objDel";
+    static immutable string CLASS_DATA_PROP = "\xFF\xFF" ~ "objPtr"; /// "\xFF" mean to hide property
+    static immutable string CLASS_DELETED_PROP = "\xFF\xFF" ~ "objDel";
     @property duk_context* raw() { return _ctx; }
 
 public:
     this()
     {
-        _ctx = duk_create_heap_default;
+        //_ctx = duk_create_heap_default;
+        _ctx = duk_create_heap(null, null, null, null, &my_fatal);
+    }
+
+    extern (C) static void my_fatal(void *udata, const char *msg)
+    {
+        /* Note that 'msg' may be NULL. */
+        writeln(fromStringz(msg));
     }
 
     ~this()
@@ -43,9 +59,11 @@ public:
         Params:
             js = the source code
     */
-    void evalString(string js)
+    T evalString(T)(string js)
     {
         duk_eval_string(_ctx, js.toStringz());
+
+        return get!T();
     }
 
     /** Register a global object in JS context. */
@@ -132,12 +150,16 @@ public:
     /// Utility method to get a type on the stack.
     private static T get(T)(duk_context *ctx, int idx = -1)
     {
-        static if (is(T == int))    return duk_get_int(ctx, idx);
-        static if (is(T == bool))   return duk_get_boolean(ctx, idx);
-        static if (is(T == float))  return duk_get_number(ctx, idx);
-        static if (is(T == double)) return duk_get_number(ctx, idx);
-        static if (is(T == string)) return fromStringz(duk_get_string(ctx, idx)).to!string;
+        debug pragma(msg, __FUNCTION__);
+        static if (is(T == int))    return duk_require_int(ctx, idx);
+        static if (is(T == bool))   return duk_require_boolean(ctx, idx);
+        static if (is(T == float))  return duk_require_number(ctx, idx);
+        static if (is(T == double)) return duk_require_number(ctx, idx);
+        static if (is(T == string)) return fromStringz(duk_require_string(ctx, idx)).to!string;
         static if (is(T == class)) {
+            if (!duk_is_object(ctx, idx))
+                duk_error(ctx, DUK_ERR_TYPE_ERROR, "expected an object");
+
             duk_get_prop_string(ctx, idx, CLASS_DATA_PROP.toStringz());
             void* addr = duk_get_pointer(ctx, -1);
             duk_pop(ctx);  // pop CLASS_DATA_PROP
@@ -165,8 +187,11 @@ private:
     */
     static auto getArgs(alias Func)(duk_context *ctx) if (isFunction!Func)
     {
+        debug pragma(msg, __FUNCTION__)
         Tuple!(Parameters!Func) args;
+        debug pragma(msg, Parameters!Func);
         static foreach(i, ArgType; Parameters!Func) {
+            debug pragma(msg, "ArgType " ~ ArgType.stringof);
             args[i] = get!ArgType(ctx, i);
         }
         return args;
@@ -208,7 +233,6 @@ private:
     {
         extern(C) static duk_ret_t func(duk_context *ctx) {
             int n = duk_get_top(ctx);  // number of args
-
             // check parameter count
             if (n != Parameters!Func.length)
                 return DUK_RET_RANGE_ERROR;
@@ -373,8 +397,8 @@ unittest
     auto ctx = new DukContext();
     ctx.registerGlobal!add;
 
-    ctx.evalString("add(1, 5)");
-    assert(ctx.get!int(-1) == 6);
+    auto res = ctx.evalString!int("add(1, 5)");
+    assert(res == 6);
 }
 
 ///
@@ -388,8 +412,8 @@ unittest
     auto ctx = new DukContext();
     ctx.registerGlobal!capitalize;
 
-    ctx.evalString(`capitalize("hEllO")`);
-    assert(ctx.get!string(-1) == "Hello");
+    auto res = ctx.evalString!string(`capitalize("hEllO")`);
+    assert(res == "Hello");
 }
 
 /// register!Enum
@@ -404,11 +428,11 @@ unittest
     auto ctx = new DukContext();
     ctx.registerGlobal!Direction;
 
-    ctx.evalString("Direction['up']");
-    assert(ctx.get!int() == 0);
+    auto res = ctx.evalString!int("Direction['up']");
+    assert(res == 0);
 
-    ctx.evalString("Direction['down']");
-    assert(ctx.get!int() == 1);
+    res = ctx.evalString!int("Direction['down']");
+    assert(res == 1);
 }
 
 /// namespace
@@ -426,8 +450,8 @@ unittest
         .register!Direction
         .finalize();
 
-    ctx.evalString("Work.Direction.down");
-    assert(ctx.get!int() == 1);
+    auto res = ctx.evalString!int("Work.Direction.down");
+    assert(res == 1);
 }
 
 class Point
@@ -439,7 +463,6 @@ class Point
     {
         this.x = x;
         this.y = y;
-
     }
 
     ~this()
@@ -465,16 +488,12 @@ unittest
     ctx.registerGlobal!Point;
     ctx.registerGlobal!inc;
 
-    //ctx.evalString("p = new Point(20, 40); p.toString()");
-    //assert(ctx.get!string() == "(20, 40)");
-
-    ctx.evalString("p1 = new Point(20, 40);" ~
-        "p1.toString();" ~
+    auto res = ctx.evalString!string("p1 = new Point(20, 40);" ~
         "p2 = new Point(10, 20);" ~
         "p2.toString();" ~
         "inc(p2);" ~
         "p2.toString();"
     );
 
-    assert(ctx.get!string() == "(11, 21)");
+    assert(res == "(11, 21)");
 }

@@ -1,6 +1,7 @@
 module etc.c.duktape;
 
 public import etc.c.duk_config;
+import std.string : toStringz;
 /*
  *  Duktape public API for Duktape 2.3.0.
  *
@@ -490,6 +491,23 @@ void duk_throw_raw (duk_context* ctx);
 void duk_fatal_raw (duk_context* ctx, const(char)* err_msg);
 void duk_error_raw (duk_context* ctx, duk_errcode_t err_code, const(char)* filename, duk_int_t line, const(char)* fmt, ...);
 
+/*
+ *  Error handling
+ */
+void duk_error(duk_context *ctx, duk_errcode_t err_code, const char *fmt, ...)
+{
+    va_list ap;
+
+    static if (is(typeof(__va_argsave)))
+        va_start(ap, __va_argsave);
+    else
+        va_start(ap, fmt);
+
+    duk_error_raw(ctx, cast(duk_errcode_t)err_code, toStringz(__FILE__), cast(duk_int_t)__LINE__, fmt, ap);
+
+    va_end(ap);
+}
+
 /* DUK_API_VARIADIC_MACROS */
 /* For legacy compilers without variadic macros a macro hack is used to allow
  * variable arguments.  While the macro allows "return duk_error(...)", it
@@ -617,6 +635,21 @@ duk_idx_t duk_push_proxy (duk_context* ctx, duk_uint_t proxy_flags);
 /*flags*/
 
 duk_idx_t duk_push_error_object_raw (duk_context* ctx, duk_errcode_t err_code, const(char)* filename, duk_int_t line, const(char)* fmt, ...);
+
+duk_idx_t duk_push_error_object(duk_context *ctx, duk_errcode_t err_code, const char *fmt, ...) {
+    va_list ap;
+
+    static if (is(typeof(__va_argsave)))
+        va_start(ap, __va_argsave);
+    else
+        va_start(ap, fmt);
+
+    auto r =  duk_push_error_object_raw(ctx, err_code, toStringz(__FILE__), cast(duk_int_t)__LINE__, fmt, ap);
+
+    va_end(ap);
+
+    return r;
+}
 
 /* Note: parentheses are required so that the comma expression works in assignments. */
 
@@ -884,7 +917,7 @@ const(char)* duk_safe_to_lstring (duk_context* ctx, duk_idx_t idx, duk_size_t* o
 
 extern (D) auto duk_safe_to_string(T0, T1)(auto ref T0 ctx, auto ref T1 idx)
 {
-    return duk_safe_to_lstring(ctx, idx, NULL);
+    return duk_safe_to_lstring(ctx, idx, null);
 }
 
 /*
