@@ -3,6 +3,8 @@
 
     It add automatic registration of D objects.
 */
+module duktape;
+
 import std.stdio;
 import etc.c.duktape;
 import std.string : toStringz, fromStringz;
@@ -10,7 +12,6 @@ import std.traits;
 
 enum AllMembers(alias Symbol) = __traits(allMembers, Symbol);
 enum Protection(alias Symbol) = __traits(getProtection, Symbol);
-enum Member(alias Symbol, string n) = __traits(getMember, Symbol, n);
 enum Identifier(alias Symbol) = __traits(identifier, Symbol);
 
 static bool IsPublic(alias Symbol)() { return Protection!Symbol == "public"; }
@@ -19,14 +20,13 @@ static bool IsPublic(alias Symbol)() { return Protection!Symbol == "public"; }
 final class DukContext
 {
     import std.conv : to;
+    import std.typecons;
 
 private:
     duk_context *_ctx;
-
+    static immutable string CLASS_DATA_PROP = "\xFF" ~ "objPtr"; /// "\xFF" mean to hide property
+    static immutable string CLASS_DELETED_PROP = "\xFF" ~ "objDel";
     @property duk_context* raw() { return _ctx; }
-
-    static immutable string CLASS_DATA_PROP = "___data___";
-    static immutable string CLASS_DELETED_PROP = "___deleted___";
 
 public:
     this()
@@ -39,11 +39,16 @@ public:
         duk_destroy_heap(_ctx);
     }
 
+    /** Evaluate a JS string.
+        Params:
+            js = the source code
+    */
     void evalString(string js)
     {
         duk_eval_string(_ctx, js.toStringz());
     }
 
+    /** Register a global object in JS context. */
     DukContext registerGlobal(alias Symbol)(string name = Identifier!Symbol)
     {
         register!Symbol(name);
@@ -68,7 +73,7 @@ public:
         arr_idx = duk_push_array(_ctx);
 
         // push a js array
-        static foreach(Member; [EnumMembers!Enum]) {
+        static foreach(Member; EnumMembers!Enum) {
             this.push!EnumBaseType(_ctx, cast(EnumBaseType) Member); // push value
             duk_put_prop_string(_ctx, arr_idx, to!string(Member).toStringz()); // push string prop
         }
@@ -100,8 +105,6 @@ public:
         static foreach(Method; Members) {
             static if (IsPublic!Method && !MemberToIgnore.canFind(Method)) {
                 static if (isFunction!(__traits(getMember, base, Method))) {
-                    // pragma(msg, Parameters!(__traits(getMember, Class.init, Method)));
-
                     duk_push_c_function(_ctx,
                         generateExternDukMethod!(Class, __traits(getMember, Class.init, Method)),
                         Parameters!(__traits(getMember, Class.init, Method)).length /*nargs*/);
@@ -152,10 +155,57 @@ public:
         static if (is(T == string)) duk_push_string(ctx, value.toStringz());
     }
 
+private:
+    /** Get all function arguments on the stask.
+    Params:
+        ctx = duk context
+    Template_Params:
+        Func = the func
+    Returns: A tuple of arguments.
+    */
+    static auto getArgs(alias Func)(duk_context *ctx) if (isFunction!Func)
+    {
+        Tuple!(Parameters!Func) args;
+        static foreach(i, ArgType; Parameters!Func) {
+            args[i] = get!ArgType(ctx, i);
+        }
+        return args;
+    }
+
+    /** Call the function with a tuple of arguments.
+        Returns: the number of return valuee
+    */
+    static int call(alias Func)(duk_context *ctx, Tuple!(Parameters!Func) args) if (isFunction!Func)
+    {
+        static if (is(ReturnType!Func == void)) {
+            Func(args.expand);
+            return 0;
+        }
+        else {
+            ReturnType!Func ret = Func(args.expand);
+            push(ctx, ret);
+            return 1; // one return value
+        }
+    }
+
+     /** Call the method with a tuple of arguments.
+        Returns: the number of return valuee
+    */
+    static int callMethod(alias Method, T)(duk_context *ctx, Tuple!(Parameters!Method) args, T instance) if (isFunction!Method)
+    {
+        static if (is(ReturnType!Method == void)) {
+            __traits(getMember, instance, Identifier!Method)(args.expand);
+            return 0;
+        }
+        else {
+            ReturnType!Method ret = __traits(getMember, instance, Identifier!Method)(args.expand);
+            push(ctx, ret);
+            return 1; // one return value
+        }
+    }
+
     auto generateExternDukFunc(alias Func)() if (isFunction!Func)
     {
-        import std.typecons;
-
         extern(C) static duk_ret_t func(duk_context *ctx) {
             int n = duk_get_top(ctx);  // number of args
 
@@ -163,22 +213,8 @@ public:
             if (n != Parameters!Func.length)
                 return DUK_RET_RANGE_ERROR;
 
-            // create a tuple of arguments
-            Tuple!(Parameters!Func) args;
-            static foreach(i, ArgType; Parameters!Func) {
-                args[i] = get!ArgType(ctx, i);
-            }
-
-            // call the function
-            static if (is(ReturnType!Func == void)) {
-                Func(args.expand);
-                return 0;
-            }
-            else {
-                ReturnType!Func ret = Func(args.expand);
-                push(ctx, ret);
-                return 1; // one return value
-            }
+            auto args = getArgs!Func(ctx);
+            return call!Func(ctx, args);
         }
 
         return &func;
@@ -203,22 +239,8 @@ public:
             if (n != Parameters!Method.length)
                 return DUK_RET_RANGE_ERROR;
 
-            // create a tuple of arguments
-            Tuple!(Parameters!Method) args;
-            static foreach(i, ArgType; Parameters!Method) {
-                args[i] = get!ArgType(ctx, i);
-            }
-
-            // call the method
-            static if (is(ReturnType!Method == void)) {
-                __traits(getMember, instance, Identifier!Method)(args.expand);
-                return 0;
-            }
-            else {
-                ReturnType!Method ret = __traits(getMember, instance, Identifier!Method)(args.expand);
-                push(ctx, ret);
-                return 1; // one return value
-            }
+            auto args = getArgs!Method(ctx);
+            return callMethod!Method(ctx, args, instance);
         }
 
         return &func;
@@ -239,11 +261,7 @@ public:
             if (n != Parameters!(__traits(getMember, Class.init, "__ctor")).length)
                 return DUK_RET_RANGE_ERROR;
 
-            // create a tuple of arguments
-            Tuple!(Parameters!(__traits(getMember, Class.init, "__ctor"))) args;
-            static foreach(i, ArgType; Parameters!(__traits(getMember, Class.init, "__ctor"))) {
-                args[i] = get!ArgType(ctx, i);
-            }
+            auto args = getArgs!(__traits(getMember, Class.init, "__ctor"))(ctx);
 
             // Push special this binding to the function being constructed
             duk_push_this(ctx);
