@@ -1,23 +1,11 @@
 {
-	"name": "d-duktape",
-	"authors": [
-		"Eliott Dumeix"
-	],
+	"name": "duktape-examples",
+	"authors": ["Eliott Dumeix"],
 	"description": "A minimal D application.",
-	"license": "proprietary",
-	"targetType": "library",
+	"license": "MIT",
+	"targetType": "executable",
 
-	"configurations": [
-		{
-			"name": "static",
-			"platforms": ["linux"],
-			"preBuildCommands": [
-				"make -C $PACKAGE_DIR/lib/duktape"
-			],
-			"lflags": ["-L$PACKAGE_DIR/lib/duktape"],
-			"libs": [
-				"duktape"
-			]
-		}
-	]
+	"dependencies": {
+		"duktape": {"path": "../"}
+	}
 }

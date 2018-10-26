@@ -14,3 +14,7 @@ d-duktape-test-*
 *.obj
 *.lst
 d-duktape.iml
+duktape-test-static
+libd-duktape.a
+libduktape.a
+out
