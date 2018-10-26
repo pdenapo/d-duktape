@@ -181,7 +181,7 @@ public:
         // push prototype methods
         static foreach(Method; Members) {
             // Error: class foo.Foo member x is not accessible workaround
-            static if (is(typeof(__traits(getMember, Foo.init, Method)))) {
+            static if (is(typeof(__traits(getMember, Class.init, Method)))) {
                 static if (IsPublic!(__traits(getMember, base, Method)) && !MemberToIgnore.canFind(Method)) {
                     static if (isFunction!(__traits(getMember, base, Method))) {
                         duk_push_c_function(_ctx,
@@ -269,11 +269,11 @@ private:
 
             // Store the underlying object
             duk_push_pointer(ctx, cast(void*) value);
-            duk_put_prop_string(ctx, -2, CLASS_DATA_PROP.toStringz());
+            duk_put_prop_string(ctx, -2, CLASS_DATA_PROP);
 
             // Store a boolean flag to mark the object as deleted because the destructor may be called several times
             duk_push_boolean(ctx, false);
-            duk_put_prop_string(ctx, -2, CLASS_DELETED_PROP.toStringz());
+            duk_put_prop_string(ctx, -2, CLASS_DELETED_PROP);
 
         }
         else static if (isArray!T) {
@@ -299,7 +299,7 @@ private:
             if (!duk_is_object(ctx, idx))
                 duk_error(ctx, DUK_ERR_TYPE_ERROR, "expected an object");
 
-            duk_get_prop_string(ctx, idx, CLASS_DATA_PROP.toStringz());
+            duk_get_prop_string(ctx, idx, CLASS_DATA_PROP);
             void* addr = duk_get_pointer(ctx, -1);
             duk_pop(ctx);  // pop CLASS_DATA_PROP
             return cast(T) addr;
@@ -389,7 +389,7 @@ private:
 
         extern(C) static duk_ret_t func(duk_context *ctx) {
             duk_push_this(ctx);
-            duk_get_prop_string(ctx, -1, CLASS_DATA_PROP.toStringz());
+            duk_get_prop_string(ctx, -1, CLASS_DATA_PROP);
             void* addr = duk_get_pointer(ctx, -1);
 
             duk_pop_2(ctx); // pop prop and this
