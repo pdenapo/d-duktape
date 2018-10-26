@@ -36,11 +36,17 @@ final class DukContext
 
 private:
     duk_context *_ctx;
-    static immutable string CLASS_DATA_PROP = "\xFF\xFF" ~ "objPtr"; /// "\xFF" mean to hide property
-    static immutable string CLASS_DELETED_PROP = "\xFF\xFF" ~ "objDel";
+    static immutable char* CLASS_DATA_PROP ; /// "\xFF" mean to hide property
+    static immutable char* CLASS_DELETED_PROP;
     @property duk_context* raw() { return _ctx; }
 
 public:
+    static this()
+    {
+        CLASS_DATA_PROP = ("\xFF\xFF" ~ "objPtr").toStringz();
+        CLASS_DELETED_PROP = ("\xFF\xFF" ~ "objDel").toStringz();
+    }
+
     this()
     {
         //_ctx = duk_create_heap_default;
@@ -174,12 +180,15 @@ public:
         Class base;
         // push prototype methods
         static foreach(Method; Members) {
-            static if (IsPublic!Method && !MemberToIgnore.canFind(Method)) {
-                static if (isFunction!(__traits(getMember, base, Method))) {
-                    duk_push_c_function(_ctx,
-                        generateExternDukMethod!(Class, __traits(getMember, Class.init, Method)),
-                        Parameters!(__traits(getMember, Class.init, Method)).length /*nargs*/);
-                    duk_put_prop_string(_ctx, -2, Method);
+            // Error: class foo.Foo member x is not accessible workaround
+            static if (is(typeof(__traits(getMember, Foo.init, Method)))) {
+                static if (IsPublic!(__traits(getMember, base, Method)) && !MemberToIgnore.canFind(Method)) {
+                    static if (isFunction!(__traits(getMember, base, Method))) {
+                        duk_push_c_function(_ctx,
+                            generateExternDukMethod!(Class, __traits(getMember, Class.init, Method)),
+                            Parameters!(__traits(getMember, Class.init, Method)).length /*nargs*/);
+                        duk_put_prop_string(_ctx, -2, Method);
+                    }
                 }
             }
         }
@@ -430,11 +439,11 @@ private:
 
             // Store the underlying object
             duk_push_pointer(ctx, cast(void*) instance);
-            duk_put_prop_string(ctx, -2, CLASS_DATA_PROP.toStringz());
+            duk_put_prop_string(ctx, -2, CLASS_DATA_PROP);
 
             // Store a boolean flag to mark the object as deleted because the destructor may be called several times
             duk_push_boolean(ctx, false);
-            duk_put_prop_string(ctx, -2, CLASS_DELETED_PROP.toStringz());
+            duk_put_prop_string(ctx, -2, CLASS_DELETED_PROP);
 
             auto classDestructor = generateExternDukDestructor!Class(ctx);
 
@@ -456,13 +465,15 @@ private:
 
         extern(C) static duk_ret_t func(duk_context *ctx) {
             // The object to delete is passed as first argument instead
-            duk_get_prop_string(ctx, 0, CLASS_DELETED_PROP.toStringz());
+            duk_get_prop_string(ctx, 0, CLASS_DELETED_PROP);
 
             bool deleted = (duk_to_boolean(ctx, -1) != 0);
             duk_pop(ctx);
 
             if (!deleted) {
-                duk_get_prop_string(ctx, 0, CLASS_DATA_PROP.toStringz());
+                auto str = CLASS_DATA_PROP;
+
+                duk_get_prop_string(ctx, 0, CLASS_DATA_PROP);
                 void* addr = duk_to_pointer(ctx, -1);
                 duk_pop(ctx);
 
@@ -471,7 +482,7 @@ private:
 
                 // Mark as deleted
                 duk_push_boolean(ctx, true);
-                duk_put_prop_string(ctx, 0, CLASS_DELETED_PROP.toStringz());
+                duk_put_prop_string(ctx, 0, CLASS_DELETED_PROP);
             }
 
             return 0;

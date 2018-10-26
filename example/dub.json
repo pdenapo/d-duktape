@@ -1,0 +1,23 @@
+{
+	"name": "d-duktape",
+	"authors": [
+		"Eliott Dumeix"
+	],
+	"description": "A minimal D application.",
+	"license": "proprietary",
+	"targetType": "library",
+
+	"configurations": [
+		{
+			"name": "static",
+			"platforms": ["linux"],
+			"preBuildCommands": [
+				"make -C $PACKAGE_DIR/lib/duktape"
+			],
+			"lflags": ["-L$PACKAGE_DIR/lib/duktape"],
+			"libs": [
+				"duktape"
+			]
+		}
+	]
+}
