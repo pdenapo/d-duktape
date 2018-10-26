@@ -5,7 +5,7 @@
 	],
 	"description": "A minimal D application.",
 	"license": "proprietary",
-	"targetType": "executable",
+	"targetType": "library",
 
 	"configurations": [
 		{
