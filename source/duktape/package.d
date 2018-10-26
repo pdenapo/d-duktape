@@ -246,6 +246,7 @@ public:
 
 private:
     /// Utility method to push a type on the stack.
+    /// Remove the pointer from GC root in case of object
     static void push(T)(duk_context *ctx, T value)
     {
         static if (is(T == int))    duk_push_int(ctx, value);
@@ -253,6 +254,19 @@ private:
         else static if (is(T == float))  duk_push_number(ctx, value);
         else static if (is(T == double)) duk_push_number(ctx, value);
         else static if (is(T == string)) duk_push_string(ctx, value.toStringz());
+        else static if (is(T == class)) {
+            import core.memory;
+            GC.removeRoot(cast(void*) value);
+
+            // Store the underlying object
+            duk_push_pointer(ctx, cast(void*) value);
+            duk_put_prop_string(ctx, -2, CLASS_DATA_PROP.toStringz());
+
+            // Store a boolean flag to mark the object as deleted because the destructor may be called several times
+            duk_push_boolean(ctx, false);
+            duk_put_prop_string(ctx, -2, CLASS_DELETED_PROP.toStringz());
+
+        }
         else static if (isArray!T) {
             alias Elem = ForeachType!T;
             auto arrIdx = duk_push_array(ctx);
@@ -480,6 +494,15 @@ unittest
     ctx.registerGlobal!add;
     ctx.registerGlobal!Directions;
     ctx.registerGlobal!Point;
+
+
+    assert(ctx.evalString!string(q"{
+        p1 = new Point(20, 40);
+        p2 = new Point(10, 20);
+        p3 = add(p1, p2);
+
+        p3.toString();
+    }") == "(30, 60)");
 }
 
 /// Namespace support
