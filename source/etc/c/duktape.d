@@ -2,7 +2,7 @@ module etc.c.duktape;
 
 public import etc.c.duk_config;
 import std.string : toStringz;
-/*
+/**
  *  Duktape public API for Duktape 2.3.0.
  *
  *  See the API reference for documentation on call semantics.  The exposed,
@@ -227,9 +227,9 @@ alias duk_debug_detached_function = void function (duk_context* ctx, void* udata
 struct duk_thread_state
 {
     /* XXX: Enough space to hold internal suspend/resume structure.
-    	 * This is rather awkward and to be fixed when the internal
-    	 * structure is visible for the public API header.
-    	 */
+         * This is rather awkward and to be fixed when the internal
+         * structure is visible for the public API header.
+         */
     char[128] data;
 }
 

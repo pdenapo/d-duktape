@@ -1,4 +1,4 @@
-/*
+/**
     D high level binding for Duktape.
 
     It add automatic registration of D symbol.
@@ -27,21 +27,7 @@ class DukContextException : Exception
 
 /** Advanced duk context.
 
-    It allow to register D symbol directly:
-	----
-	static int add(int a, int b) {
-        return a + b;
-    }
-
-    enum Directions { up, down }
-
-    class Point {}
-
-    auto ctx = new DukContext();
-    ctx.registerGlobal!add;
-    ctx.registerGlobal!Directions;
-    ctx.registerGlobal!Point;
-	----
+It allow to register D symbol directly.
 */
 final class DukContext
 {
@@ -72,21 +58,37 @@ public:
         duk_destroy_heap(_ctx);
     }
 
-    /** Evaluate a JS string.
+    /** Evaluate a JS string and get an optional result
         Params:
             js = the source code
     */
-    T evalString(T)(string js)
+    T evalString(T=void)(string js)
     {
         duk_eval_string(_ctx, js.toStringz());
 
-        return get!T();
+        static if (!is(T == void))
+            return get!T();
+    }
+
+    ///
+    unittest
+    {
+        auto ctx = new DukContext();
+        ctx.evalString("a = 42;");
+        assert(ctx.evalString!int("a = 1 + 2") == 3);
     }
 
     /** Register a global object in JS context. */
     DukContext registerGlobal(alias Symbol)(string name = Identifier!Symbol)
     {
-        register!Symbol(name);
+        register!Symbol();
+        duk_put_global_string(_ctx, name.toStringz());
+        return this;
+    }
+
+    /// Set a previously registered symbol as global.
+    DukContext setGlobal(string name)
+    {
         duk_put_global_string(_ctx, name.toStringz());
         return this;
     }
@@ -105,16 +107,26 @@ public:
         assert(res == 6);
     }
 
-    /// Automatic registration of D function.
-    DukContext register(alias Func)(string name = Identifier!Func) if (isFunction!Func)
+    /// Automatic registration of D function. (not global)
+    DukContext register(alias Func)() if (isFunction!Func)
     {
         auto externFunc = generateExternDukFunc!Func;
         duk_push_c_function(_ctx, externFunc, Parameters!Func.length /*nargs*/);
         return this;
     }
 
-    /// Automatic registration of D enum.
-    DukContext register(alias Enum)(string name = Identifier!Enum) if (is(Enum == enum))
+    ///
+    unittest
+    {
+        static int square(int n) { return n*n; }
+
+        auto ctx = new DukContext();
+        ctx.register!square.setGlobal("square"); // equivalent to ctx.registerGlobal!square
+        assert(ctx.evalString!int(r"a = square(5)") == 25);
+    }
+
+    /// Automatic registration of D enum. (not global)
+    DukContext register(alias Enum)() if (is(Enum == enum))
     {
         alias EnumBaseType = OriginalType!Enum;
 
@@ -129,8 +141,18 @@ public:
         return this;
     }
 
-    /// Automatic registration of D class.
-    DukContext register(alias Class)(string name = Identifier!Class) if (is(Class == class))
+    ///
+    unittest
+    {
+        enum Direction { up = 0, down = 1 }
+
+        auto ctx = new DukContext();
+        ctx.register!Direction.setGlobal("Direction"); // equivalent to ctx.registerGlobal!Direction
+        assert(ctx.evalString!int(r"a = Direction.down") == 1);
+    }
+
+    /// Automatic registration of D class. (not global)
+    DukContext register(alias Class)() if (is(Class == class))
     {
         import std.algorithm: canFind;
 
@@ -168,22 +190,83 @@ public:
         return this;
     }
 
+    ///
+    unittest
+    {
+        // Point is a class that hold x, y coordinates
+        auto ctx = new DukContext();
+        ctx.register!Point.setGlobal("Point"); // equivalent to ctx.registerGlobal!Point
+        assert(ctx.evalString!string(r"new Point(1, 2).toString()") == "(1, 2)");
+    }
+
+    /** Open a new JS namespace.
+    You can then register symbol inside and call finalize() when
+    its done.
+    */
     NamespaceContext createNamespace(string name)
     {
         return new NamespaceContext(this, name);
     }
 
+    ///
+    unittest
+    {
+        enum Direction { up, down }
+
+        auto ctx = new DukContext();
+
+        ctx.createNamespace("Com")
+            .register!Direction
+            .finalize();
+
+        assert(ctx.evalString!int("Com.Direction.down") == 1);
+    }
+
+
+    /// Get a value on the stack.
     T get(T)(int idx = -1)
     {
         return get!T(_ctx, idx);
     }
 
-    /// Utility method to get a type on the stack.
-    private static T get(T)(duk_context *ctx, int idx = -1)
+    ///
+    unittest
     {
-        debug pragma(msg, __FUNCTION__);
-        debug pragma(msg, T);
+        auto ctx = new DukContext();
 
+        ctx.push([1, 2, 3]);
+
+        assert([1, 2, 3] == ctx.get!(int[]));
+    }
+
+    void push(T)(T value)
+    {
+        return push!T(_ctx, value);
+    }
+
+private:
+    /// Utility method to push a type on the stack.
+    static void push(T)(duk_context *ctx, T value)
+    {
+        static if (is(T == int))    duk_push_int(ctx, value);
+        else static if (is(T == bool))   duk_push_boolean(ctx, value);
+        else static if (is(T == float))  duk_push_number(ctx, value);
+        else static if (is(T == double)) duk_push_number(ctx, value);
+        else static if (is(T == string)) duk_push_string(ctx, value.toStringz());
+        else static if (isArray!T) {
+            alias Elem = ForeachType!T;
+            auto arrIdx = duk_push_array(ctx);
+
+            foreach(uint i, Elem elem; value) {
+                push!Elem(ctx, elem);
+                duk_put_prop_index(ctx, arrIdx, i);
+            }
+        }
+    }
+
+    /// Utility method to get a type on the stack.
+    static T get(T)(duk_context *ctx, int idx = -1)
+    {
         static if (is(T == int))    return duk_require_int(ctx, idx);
         else static if (is(T == bool))   return duk_require_boolean(ctx, idx);
         else static if (is(T == float))  return duk_require_number(ctx, idx);
@@ -214,40 +297,6 @@ public:
         }
     }
 
-    void push(T)(T value)
-    {
-        return push!T(_ctx, value);
-    }
-
-    /// Utility method to push a type on the stack.
-    private static void push(T)(duk_context *ctx, T value)
-    {
-        debug pragma(msg, __FUNCTION__);
-        static if (is(T == int))    duk_push_int(ctx, value);
-        else static if (is(T == bool))   duk_push_boolean(ctx, value);
-        else static if (is(T == float))  duk_push_number(ctx, value);
-        else static if (is(T == double)) duk_push_number(ctx, value);
-        else static if (is(T == string)) duk_push_string(ctx, value.toStringz());
-        else static if (isArray!T) {
-            alias Elem = ForeachType!T;
-            auto arrIdx = duk_push_array(ctx);
-
-            foreach(uint i, Elem elem; value) {
-	            push!Elem(ctx, elem);
-                duk_put_prop_index(ctx, arrIdx, i);
-            }
-        }
-    }
-
-    ///
-    unittest
-    {
-        auto ctx = new DukContext();
-        ctx.push([1, 2, 3]);
-        assert([1, 2, 3] == ctx.get!(int[]));
-    }
-
-private:
     /** Get all function arguments on the stask.
     Params:
         ctx = duk context
@@ -257,11 +306,8 @@ private:
     */
     static auto getArgs(alias Func)(duk_context *ctx) if (isFunction!Func)
     {
-        debug pragma(msg, __FUNCTION__)
         Tuple!(Parameters!Func) args;
-        debug pragma(msg, Parameters!Func);
         static foreach(i, ArgType; Parameters!Func) {
-            debug pragma(msg, "ArgType " ~ ArgType.stringof);
             args[i] = get!ArgType(ctx, i);
         }
         return args;
@@ -421,6 +467,21 @@ private:
     }
 }
 
+///
+unittest
+{
+    static Point add(Point a, Point b) {
+        return new Point(a.x + b.x, a.y + b.y);
+    }
+
+    enum Directions { up, down }
+
+    auto ctx = new DukContext();
+    ctx.registerGlobal!add;
+    ctx.registerGlobal!Directions;
+    ctx.registerGlobal!Point;
+}
+
 /// Namespace support
 final class NamespaceContext
 {
@@ -448,7 +509,7 @@ public:
 
     NamespaceContext register(alias Symbol)(string name = Identifier!Symbol)
     {
-        _ctx.register!Symbol(name);
+        _ctx.register!Symbol();
         duk_put_prop_string(_ctx.raw, _arrIdx, name.toStringz()); // push string prop
         return this;
     }
@@ -458,6 +519,25 @@ public:
         duk_put_global_string(_ctx.raw, _name.toStringz());
         _finalized = true;
     }
+}
+
+///
+unittest
+{
+    enum Direction
+    {
+        up,
+        down
+    }
+
+    auto ctx = new DukContext();
+
+    ctx.createNamespace("Work")
+        .register!Direction
+        .finalize();
+
+    auto res = ctx.evalString!int("Work.Direction.down");
+    assert(res == 1);
 }
 
 version (unittest)
@@ -494,7 +574,7 @@ unittest
     assert(!__traits(compiles, ctx.registerGlobal!Foo));
 }
 
-///
+//
 unittest
 {
     static string capitalize(string s) {
@@ -509,7 +589,7 @@ unittest
     assert(res == "Hello");
 }
 
-/// register!Enum
+// register!Enum
 unittest
 {
     enum Direction
@@ -528,26 +608,7 @@ unittest
     assert(res == 1);
 }
 
-/// namespace
-unittest
-{
-    enum Direction
-    {
-        up,
-        down
-    }
-
-    auto ctx = new DukContext();
-
-    ctx.createNamespace("Work")
-        .register!Direction
-        .finalize();
-
-    auto res = ctx.evalString!int("Work.Direction.down");
-    assert(res == 1);
-}
-
-/// class
+// class
 unittest
 {
     static void inc(Point p) {
