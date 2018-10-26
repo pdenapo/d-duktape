@@ -64,7 +64,7 @@ public:
     extern (C) static void my_fatal(void *udata, const char *msg)
     {
         /* Note that 'msg' may be NULL. */
-        writeln(fromStringz(msg));
+        throw new DukContextException(fromStringz(msg).to!string);
     }
 
     ~this()
@@ -182,12 +182,14 @@ public:
     private static T get(T)(duk_context *ctx, int idx = -1)
     {
         debug pragma(msg, __FUNCTION__);
+        debug pragma(msg, T);
+
         static if (is(T == int))    return duk_require_int(ctx, idx);
-        static if (is(T == bool))   return duk_require_boolean(ctx, idx);
-        static if (is(T == float))  return duk_require_number(ctx, idx);
-        static if (is(T == double)) return duk_require_number(ctx, idx);
-        static if (is(T == string)) return fromStringz(duk_require_string(ctx, idx)).to!string;
-        static if (is(T == class)) {
+        else static if (is(T == bool))   return duk_require_boolean(ctx, idx);
+        else static if (is(T == float))  return duk_require_number(ctx, idx);
+        else static if (is(T == double)) return duk_require_number(ctx, idx);
+        else static if (is(T == string)) return fromStringz(duk_require_string(ctx, idx)).to!string;
+        else static if (is(T == class)) {
             if (!duk_is_object(ctx, idx))
                 duk_error(ctx, DUK_ERR_TYPE_ERROR, "expected an object");
 
@@ -196,16 +198,53 @@ public:
             duk_pop(ctx);  // pop CLASS_DATA_PROP
             return cast(T) addr;
         }
+        else static if (isArray!T) {
+            if (!duk_is_array(ctx, idx))
+                duk_error(ctx, DUK_ERR_TYPE_ERROR, "expected an array of " ~ ForeachType!T.stringof);
+
+            T result;
+            ulong length = duk_get_length(ctx, idx);
+            for (int i = 0; i < length; i++) {
+                duk_get_prop_index(ctx, idx, i);
+                result ~= get!(ForeachType!T)(ctx, -1); // recursion on array element type
+                duk_pop(ctx); // duk_get_prop_index
+            }
+
+            return result;
+        }
+    }
+
+    void push(T)(T value)
+    {
+        return push!T(_ctx, value);
     }
 
     /// Utility method to push a type on the stack.
     private static void push(T)(duk_context *ctx, T value)
     {
+        debug pragma(msg, __FUNCTION__);
         static if (is(T == int))    duk_push_int(ctx, value);
-        static if (is(T == bool))   duk_push_boolean(ctx, value);
-        static if (is(T == float))  duk_push_number(ctx, value);
-        static if (is(T == double)) duk_push_number(ctx, value);
-        static if (is(T == string)) duk_push_string(ctx, value.toStringz());
+        else static if (is(T == bool))   duk_push_boolean(ctx, value);
+        else static if (is(T == float))  duk_push_number(ctx, value);
+        else static if (is(T == double)) duk_push_number(ctx, value);
+        else static if (is(T == string)) duk_push_string(ctx, value.toStringz());
+        else static if (isArray!T) {
+            alias Elem = ForeachType!T;
+            auto arrIdx = duk_push_array(ctx);
+
+            foreach(uint i, Elem elem; value) {
+	            push!Elem(ctx, elem);
+                duk_put_prop_index(ctx, arrIdx, i);
+            }
+        }
+    }
+
+    ///
+    unittest
+    {
+        auto ctx = new DukContext();
+        ctx.push([1, 2, 3]);
+        assert([1, 2, 3] == ctx.get!(int[]));
     }
 
 private:
@@ -455,23 +494,6 @@ unittest
     assert(!__traits(compiles, ctx.registerGlobal!Foo));
 }
 
-// Arrays
-/*
-unittest
-{
-    static int sort(int a, int b) {
-        import std.algorithm.sorting : sort;
-        return a + b;
-    }
-
-    auto ctx = new DukContext();
-    ctx.registerGlobal!add;
-
-    auto res = ctx.evalString!int("add(1, 5)");
-    assert(res == 6);
-}
-*/
-
 ///
 unittest
 {
@@ -545,4 +567,19 @@ unittest
     );
 
     assert(res == "(11, 21)");
+}
+
+// arrays
+unittest
+{
+    static T[] sort(T)(T[] arr) {
+        import std.algorithm.sorting : sort;
+        return arr.sort().release();
+    }
+
+    auto ctx = new DukContext();
+    ctx.registerGlobal!(sort!int);
+
+    auto res = ctx.evalString!(int[])("sort([5, 1, 3])");
+    assert(res == [1, 3, 5]);
 }
