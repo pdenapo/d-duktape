@@ -263,6 +263,7 @@ private:
         else static if (is(T == float))  duk_push_number(ctx, value);
         else static if (is(T == double)) duk_push_number(ctx, value);
         else static if (is(T == string)) duk_push_string(ctx, value.toStringz());
+        else static if (is(T == enum))   push!(OriginalType!T)(ctx, cast(OriginalType!T) value);
         else static if (is(T == class)) {
             import core.memory;
             GC.removeRoot(cast(void*) value);
@@ -295,6 +296,7 @@ private:
         else static if (is(T == float))  return duk_require_number(ctx, idx);
         else static if (is(T == double)) return duk_require_number(ctx, idx);
         else static if (is(T == string)) return fromStringz(duk_require_string(ctx, idx)).to!string;
+        else static if (is(T == enum))   return cast(T) get!(OriginalType!T)(ctx, idx); // get enum base type
         else static if (is(T == class)) {
             if (!duk_is_object(ctx, idx))
                 duk_error(ctx, DUK_ERR_TYPE_ERROR, "expected an object");
