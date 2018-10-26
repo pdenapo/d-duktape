@@ -91,6 +91,20 @@ public:
         return this;
     }
 
+    ///
+    unittest
+    {
+        static int add(int a, int b) {
+            return a + b;
+        }
+
+        auto ctx = new DukContext();
+        ctx.registerGlobal!add;
+
+        auto res = ctx.evalString!int("add(1, 5)");
+        assert(res == 6);
+    }
+
     /// Automatic registration of D function.
     DukContext register(alias Func)(string name = Identifier!Func) if (isFunction!Func)
     {
@@ -297,6 +311,9 @@ private:
                 return DUK_RET_TYPE_ERROR;
             }
 
+            // must have a constructor
+            static assert(hasMember!(Class, "__ctor"), Class.stringof ~ ": a constructor is required.");
+
             // check constructor parameter count
             int n = duk_get_top(ctx);  // number of args
             if (n != Parameters!(__traits(getMember, Class.init, "__ctor")).length)
@@ -404,10 +421,46 @@ public:
     }
 }
 
-///
+version (unittest)
+{
+    class Foo {}
+
+    class Point
+    {
+        float x;
+        float y;
+
+        this(float x, float y)
+        {
+            this.x = x;
+            this.y = y;
+        }
+
+        ~this()
+        {
+        }
+
+        override string toString()
+        {
+            import std.conv : to;
+            return "(" ~ to!string(x) ~ ", " ~ to!string(y) ~ ")";
+        }
+    }
+}
+
+// Class: must have a constructor
 unittest
 {
-    static int add(int a, int b) {
+    auto ctx = new DukContext();
+    assert(!__traits(compiles, ctx.registerGlobal!Foo));
+}
+
+// Arrays
+/*
+unittest
+{
+    static int sort(int a, int b) {
+        import std.algorithm.sorting : sort;
         return a + b;
     }
 
@@ -417,6 +470,7 @@ unittest
     auto res = ctx.evalString!int("add(1, 5)");
     assert(res == 6);
 }
+*/
 
 ///
 unittest
@@ -469,28 +523,6 @@ unittest
 
     auto res = ctx.evalString!int("Work.Direction.down");
     assert(res == 1);
-}
-
-class Point
-{
-    float x;
-    float y;
-
-    this(float x, float y)
-    {
-        this.x = x;
-        this.y = y;
-    }
-
-    ~this()
-    {
-    }
-
-    override string toString()
-    {
-        import std.conv : to;
-        return "(" ~ to!string(x) ~ ", " ~ to!string(y) ~ ")";
-    }
 }
 
 /// class
