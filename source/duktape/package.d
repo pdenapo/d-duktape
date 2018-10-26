@@ -1,7 +1,7 @@
 /*
-    D advanced binding for Duktape.
+    D high level binding for Duktape.
 
-    It add automatic registration of D objects.
+    It add automatic registration of D symbol.
 */
 module duktape;
 
@@ -25,7 +25,24 @@ class DukContextException : Exception
 }
 
 
-/** Advanced duk context. */
+/** Advanced duk context.
+
+    It allow to register D symbol directly:
+	----
+	static int add(int a, int b) {
+        return a + b;
+    }
+
+    enum Directions { up, down }
+
+    class Point {}
+
+    auto ctx = new DukContext();
+    ctx.registerGlobal!add;
+    ctx.registerGlobal!Directions;
+    ctx.registerGlobal!Point;
+	----
+*/
 final class DukContext
 {
     import std.conv : to;
