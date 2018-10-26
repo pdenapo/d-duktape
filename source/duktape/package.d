@@ -555,18 +555,30 @@ unittest
         p.y++;
     }
 
+    static void incArray(Point[] pts) {
+        foreach(p; pts) inc(p);
+    }
+
     auto ctx = new DukContext();
     ctx.registerGlobal!Point;
     ctx.registerGlobal!inc;
+    ctx.registerGlobal!incArray;
 
-    auto res = ctx.evalString!string("p1 = new Point(20, 40);" ~
-        "p2 = new Point(10, 20);" ~
-        "p2.toString();" ~
-        "inc(p2);" ~
-        "p2.toString();"
-    );
-
+    auto res = ctx.evalString!string(q"{
+        p1 = new Point(20, 40);
+        p2 = new Point(10, 20);
+        p2.toString();
+        inc(p2);
+        p2.toString();
+    }");
     assert(res == "(11, 21)");
+
+    res = ctx.evalString!string(q"{
+        arr = [new Point(0, 1), new Point(2, 3)];
+        incArray(arr);
+        arr[1].toString();
+    }");
+    assert(res == "(3, 4)");
 }
 
 // arrays
