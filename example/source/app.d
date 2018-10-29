@@ -51,7 +51,7 @@ int main()
         p.move(Game.Direction.left);
         p.move(Game.Direction.right);
 
-        print(p.moveHistory().toString());
+        print(p.moveHistory.toString());
     }");
 
     return 0;
