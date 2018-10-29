@@ -320,6 +320,9 @@ private:
                 duk_put_prop_index(ctx, arrIdx, i);
             }
         }
+        else {
+            static assert(false, T.stringof ~ " argument is not handled.");
+        }
     }
 
     /// Utility method to get a type on the stack.
@@ -353,6 +356,29 @@ private:
             }
 
             return result;
+        }
+        else static if (is(T == delegate)) {
+            // build a delegate englobing duk call
+            return (Parameters!T args) {
+                duk_require_function(ctx, idx); // [... func ...]
+                duk_dup(ctx, idx); // [... func ... func]
+
+                // prepare for a duk_call
+                static foreach(i, PT; Parameters!T)
+                    push!PT(ctx, args[i]); // [... func ... func arg1 argN ...]
+
+                duk_call(ctx, Parameters!T.length); // [... func ... func retval]
+                static if (is(ReturnType!T == void))
+                    duk_pop_2(ctx);
+                else {
+                    auto result = get!(ReturnType!T)(ctx, -1);
+                    duk_pop_2(ctx);
+                    return result;
+                }
+            };
+        }
+        else {
+            static assert(false, T.stringof ~ " argument is not handled.");
         }
     }
 
@@ -742,4 +768,21 @@ unittest
 
     auto res = ctx.evalString!(int[])("sort([5, 1, 3])");
     assert(res == [1, 3, 5]);
+}
+
+// callable arguments
+unittest
+{
+    alias Callable = int delegate(int, int);
+    static int callWith(Callable callable, int a1, int a2) {
+        return callable(a1, a2);
+    }
+
+    auto ctx = new DukContext();
+    ctx.registerGlobal!callWith;
+
+    auto res = ctx.evalString!int(q"{
+        callWith(function(a, b) {return a+b; }, 1, 2);
+    }");
+    assert(res == 3);
 }
