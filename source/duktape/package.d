@@ -175,26 +175,63 @@ public:
             Parameters!(__traits(getMember, Class.init, "__ctor")).length);
 
         /* Push MyObject.prototype object. */
-        duk_push_object(_ctx);
+        int objIdx = duk_push_object(_ctx);
 
         Class base;
+        uint propFlags = 0;
         // push prototype methods
         static foreach(Method; Members) {
             // Error: class foo.Foo member x is not accessible workaround
             static if (is(typeof(__traits(getMember, Class.init, Method)))) {
                 static if (IsPublic!(__traits(getMember, base, Method)) && !MemberToIgnore.canFind(Method)) {
                     static if (isFunction!(__traits(getMember, base, Method))) {
-                        duk_push_c_function(_ctx,
-                            generateExternDukMethod!(Class, __traits(getMember, Class.init, Method)),
-                            Parameters!(__traits(getMember, Class.init, Method)).length /*nargs*/);
-                        duk_put_prop_string(_ctx, -2, Method);
+                        // it is a property and exclude toString
+                        static if (hasFunctionAttributes!(__traits(getMember, Class.init, Method), "@property") &&
+                                (Method.stringof !is "toString")) {
+                            // iterate property overloads
+                            push!string(Identifier!(__traits(getMember, Class.init, Method)));  // [... key]
+                            propFlags = DUK_DEFPROP_FORCE | DUK_DEFPROP_HAVE_CONFIGURABLE;
+
+                            // the getter must be registered first
+                            static foreach(GetterSetter; __traits(getOverloads, Class, Method)) {
+                                // its a getter
+                                static if (Parameters!GetterSetter.length is 0) {
+                                    duk_push_c_function(_ctx,
+                                        generateExternDukMethod!(Class, GetterSetter),
+                                        Parameters!(GetterSetter).length ); // [obj key get]
+                                    propFlags |= DUK_DEFPROP_HAVE_GETTER;
+                                }
+                            }
+
+                            // try to register a setter
+                            static foreach(GetterSetter; __traits(getOverloads, Class, Method)) {
+                                // its a setter
+                                static if (Parameters!GetterSetter.length !is 0) {
+                                    duk_push_c_function(_ctx,
+                                        generateExternDukMethod!(Class, GetterSetter),
+                                        Parameters!(GetterSetter).length ); // [obj key get]
+                                    propFlags |= DUK_DEFPROP_HAVE_SETTER;
+                                }
+                            }
+
+                            //writeln(Method.stringof);
+
+                            duk_def_prop(_ctx, objIdx, propFlags); // [obj]
+
+                        }
+                        else {
+                            duk_push_c_function(_ctx,
+                                generateExternDukMethod!(Class, __traits(getMember, Class.init, Method)),
+                                Parameters!(__traits(getMember, Class.init, Method)).length /*nargs*/); // [obj func]
+                            duk_put_prop_string(_ctx, objIdx, Method); // [obj func]
+                        }
                     }
                 }
             }
         }
 
          /* Set MyObject.prototype = proto */
-        duk_put_prop_string(_ctx, -2, "prototype");
+        duk_put_prop_string(_ctx, objIdx - 1, "prototype");
 
         return this;
     }
@@ -387,12 +424,10 @@ private:
         import std.typecons;
 
         extern(C) static duk_ret_t func(duk_context *ctx) {
-            duk_push_this(ctx);
-            duk_get_prop_string(ctx, -1, CLASS_DATA_PROP);
+            duk_push_this(ctx); // [this]
+            duk_get_prop_string(ctx, -1, CLASS_DATA_PROP); // [this val]
             void* addr = duk_get_pointer(ctx, -1);
-
-            duk_pop_2(ctx); // pop prop and this
-
+            duk_pop_2(ctx); // []
             Class instance = cast(Class) addr;
 
             int n = duk_get_top(ctx);  // number of args
@@ -577,13 +612,18 @@ version (unittest)
 
     class Point
     {
-        float x;
-        float y;
+        float _x;
+        float _y;
+
+        @property float x() { return _x; }
+        @property void x(float v) { _x = v; }
+        @property float y() { return _y; }
+        @property void y(float v) { _y = v; }
 
         this(float x, float y)
         {
-            this.x = x;
-            this.y = y;
+            this._x = x;
+            this._y = y;
         }
 
         ~this()
@@ -643,8 +683,8 @@ unittest
 unittest
 {
     static void inc(Point p) {
-        p.x++;
-        p.y++;
+        p.x = p.x + 1;
+        p.y = p.y + 1;
     }
 
     static void incArray(Point[] pts) {
@@ -671,6 +711,22 @@ unittest
         arr[1].toString();
     }");
     assert(res == "(3, 4)");
+}
+
+// class properties
+unittest
+{
+
+    auto ctx = new DukContext();
+    ctx.registerGlobal!Point;
+
+    auto res = ctx.evalString!int(q"{
+        p = new Point(45, 96);
+        p.x = 12;
+        p.y = 26
+        a = p.x + p.y
+    }");
+    assert(res == 12 + 26);
 }
 
 // arrays
