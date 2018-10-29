@@ -265,9 +265,6 @@ private:
         else static if (is(T == string)) duk_push_string(ctx, value.toStringz());
         else static if (is(T == enum))   push!(OriginalType!T)(ctx, cast(OriginalType!T) value);
         else static if (is(T == class)) {
-            import core.memory;
-            GC.removeRoot(cast(void*) value);
-
             // Store the underlying object
             duk_push_pointer(ctx, cast(void*) value);
             duk_put_prop_string(ctx, -2, CLASS_DATA_PROP);
@@ -414,7 +411,6 @@ private:
     auto generateExternDukConstructor(alias Class)() if (is(Class == class))
     {
         import std.typecons;
-        import core.memory;
 
         extern(C) static duk_ret_t func(duk_context *ctx) {
             if (!duk_is_constructor_call(ctx)) {
@@ -437,7 +433,6 @@ private:
             // instanciate class @nogc
             // lifetime is managed by j
             auto instance = new Class(args.expand);
-            GC.removeRoot(cast(void*) instance);
 
             // Store the underlying object
             duk_push_pointer(ctx, cast(void*) instance);
