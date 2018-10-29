@@ -433,7 +433,7 @@ private:
     auto generateExternDukFunc(alias Func)() if (isFunction!Func)
     {
         extern(C) static duk_ret_t func(duk_context *ctx) {
-            int n = duk_get_top(ctx);  // number of args
+            int n = duk_get_top(ctx);  // [arg1 argN ...]
             // check parameter count
             if (n != Parameters!Func.length)
                 return DUK_RET_RANGE_ERROR;
@@ -463,6 +463,7 @@ private:
                 return DUK_RET_RANGE_ERROR;
 
             auto args = getArgs!Method(ctx);
+            duk_pop_n(ctx, n);
             return callMethod!Method(ctx, args, instance);
         }
 
@@ -482,32 +483,33 @@ private:
             static assert(hasMember!(Class, "__ctor"), Class.stringof ~ ": a constructor is required.");
 
             // check constructor parameter count
-            int n = duk_get_top(ctx);  // number of args
+            int n = duk_get_top(ctx);  // [arg1 argn ...]
             if (n != Parameters!(__traits(getMember, Class.init, "__ctor")).length)
                 return DUK_RET_RANGE_ERROR;
 
             auto args = getArgs!(__traits(getMember, Class.init, "__ctor"))(ctx);
+            duk_pop_n(ctx, n);
 
             // Push special this binding to the function being constructed
-            duk_push_this(ctx);
+            duk_push_this(ctx); // [this]
 
             // instanciate class @nogc
             // lifetime is managed by j
             auto instance = new Class(args.expand);
 
             // Store the underlying object
-            duk_push_pointer(ctx, cast(void*) instance);
-            duk_put_prop_string(ctx, -2, CLASS_DATA_PROP);
+            duk_push_pointer(ctx, cast(void*) instance); // [this ptr]
+            duk_put_prop_string(ctx, -2, CLASS_DATA_PROP); // [this]
 
             // Store a boolean flag to mark the object as deleted because the destructor may be called several times
-            duk_push_boolean(ctx, false);
-            duk_put_prop_string(ctx, -2, CLASS_DELETED_PROP);
+            duk_push_boolean(ctx, false); // [this bool]
+            duk_put_prop_string(ctx, -2, CLASS_DELETED_PROP); // [this]
 
             auto classDestructor = generateExternDukDestructor!Class(ctx);
 
             // Store the function destructor
-            duk_push_c_function(ctx, classDestructor, 1);
-            duk_set_finalizer(ctx, -2);
+            duk_push_c_function(ctx, classDestructor, 1); // [this func]
+            duk_set_finalizer(ctx, -2); // [this]
 
             duk_pop(ctx); // pop this
 
@@ -523,25 +525,27 @@ private:
 
         extern(C) static duk_ret_t func(duk_context *ctx) {
             // The object to delete is passed as first argument instead
-            duk_get_prop_string(ctx, 0, CLASS_DELETED_PROP);
+            duk_get_prop_string(ctx, 0, CLASS_DELETED_PROP); // [obj val]
 
             bool deleted = (duk_to_boolean(ctx, -1) != 0);
-            duk_pop(ctx);
+            duk_pop(ctx); // [obj]
 
             if (!deleted) {
                 auto str = CLASS_DATA_PROP;
 
-                duk_get_prop_string(ctx, 0, CLASS_DATA_PROP);
-                void* addr = duk_to_pointer(ctx, -1);
-                duk_pop(ctx);
+                duk_get_prop_string(ctx, 0, CLASS_DATA_PROP); // [obj val]
+                void* addr = duk_to_pointer(ctx, -1); // [obj val]
+                duk_pop(ctx); // [obj]
 
                 Class instance = cast(Class) addr;
                 destroy(instance);
 
                 // Mark as deleted
-                duk_push_boolean(ctx, true);
-                duk_put_prop_string(ctx, 0, CLASS_DELETED_PROP);
+                duk_push_boolean(ctx, true); // [obj bool]
+                duk_put_prop_string(ctx, 0, CLASS_DELETED_PROP); // [obj]
             }
+
+            duk_pop(ctx);
 
             return 0;
         }
