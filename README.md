@@ -8,7 +8,7 @@ Quick start with dub
 
 ```json
 "dependencies": {
-	"duktape": "*"
+	"duktaped": "*"
 }
 ```
 

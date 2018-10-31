@@ -6,6 +6,7 @@
 	"targetType": "executable",
 
 	"dependencies": {
-		"duktape": {"path": "../"}
+		"duktaped": {"path": "../"},
+		"vibe-d": "~>0.8.4"
 	}
 }

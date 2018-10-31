@@ -1,5 +1,5 @@
 {
-	"name": "duktape",
+	"name": "duktaped",
 	"authors": ["Eliott Dumeix"],
 	"description": "duktape high level bindings",
 	"license": "MIT",
