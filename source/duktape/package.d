@@ -213,11 +213,7 @@ public:
                                     propFlags |= DUK_DEFPROP_HAVE_SETTER;
                                 }
                             }
-
-                            //writeln(Method.stringof);
-
                             duk_def_prop(_ctx, objIdx, propFlags); // [obj]
-
                         }
                         else {
                             duk_push_c_function(_ctx,
@@ -292,10 +288,9 @@ public:
 
 private:
     /// Utility method to push a type on the stack.
-    /// Remove the pointer from GC root in case of object
     static void push(T)(duk_context *ctx, T value)
     {
-        static if (is(T == int))    duk_push_int(ctx, value);
+        static if (is(T == int))         duk_push_int(ctx, value);
         else static if (is(T == bool))   duk_push_boolean(ctx, value);
         else static if (is(T == float))  duk_push_number(ctx, value);
         else static if (is(T == double)) duk_push_number(ctx, value);
@@ -414,7 +409,7 @@ private:
         }
     }
 
-     /** Call the method with a tuple of arguments.
+    /** Call the method with a tuple of arguments.
         Returns: the number of return valuee
     */
     static int callMethod(alias Method, T)(duk_context *ctx, Tuple!(Parameters!Method) args, T instance) if (isFunction!Method)
