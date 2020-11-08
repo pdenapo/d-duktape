@@ -35,13 +35,13 @@ final class DukContext
     import std.typecons;
 
 private:
-    duk_context *_ctx;
     static immutable char* CLASS_DATA_PROP ; /// "\xFF" mean to hide property
     static immutable char* CLASS_DELETED_PROP;
     @property duk_context* raw() { return _ctx; }
 
 public:
-    static this()
+    duk_context *_ctx;
+    shared static this()
     {
         CLASS_DATA_PROP = ("\xFF\xFF" ~ "objPtr").toStringz();
         CLASS_DELETED_PROP = ("\xFF\xFF" ~ "objDel").toStringz();
