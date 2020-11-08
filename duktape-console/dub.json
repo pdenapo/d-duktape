@@ -4,7 +4,7 @@
 	],
 	"copyright": "Copyright © 2020, Pablo De Nápoli",
 	"dependencies": {
-		"duktaped": {"path": "../"},
+		"d_duktape": {"path": "../"}, 
 		"duktape": "*",
 		"readline": "~>0.2.0"
 	},
