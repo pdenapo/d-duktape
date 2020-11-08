@@ -37,14 +37,6 @@ bool is_prime(int val)
 	return true;
 }
 
-// This function does the interface between the D function is_prime and duktape
-
-extern (C) duk_ret_t is_prime_interface(duk_context *ctx) {
-    int val = duk_require_int(ctx, 0);
-    duk_push_boolean(ctx,is_prime(val));
-    return 1;
-}
-
 static void push_file_as_string(duk_context *ctx, const char *filename) {
     FILE *f;
     size_t len;
@@ -61,6 +53,15 @@ static void push_file_as_string(duk_context *ctx, const char *filename) {
     }
 }
 
+// print the message many times, for example:
+// print_many(5,"hola")
+
+static void print_many(int times,string msg)
+{
+  for (int i=0;i<times;i++)
+    writeln(msg);
+}
+
 extern (C) duk_ret_t load(duk_context *ctx) {
     const(char)* file_name = duk_require_string(ctx, 0);
 	push_file_as_string(ctx, file_name);
@@ -75,8 +76,6 @@ extern (C) duk_ret_t load(duk_context *ctx) {
 	return 1;
 }
 
-
-
 int main()
 {
 	writeln("Duketape console using d-duktape y GNU Readline");
@@ -88,29 +87,17 @@ int main()
         return 1;
     }
 
-	// Make sure that it is not collected even if it is no
-	// longer referenced from D code (stack, GC heap, …).
-	// GC.addRoot(cast(void*)ctx);
-
-	// Also ensure that a moving collector does not relocate
-	// the object.
-	// GC.setAttr(cast(void*)ctx, GC.BlkAttr.NO_MOVE);
-
-    /* scope(exit) {
-		// This will be excecuted when we leave the context
-		//duk_destroy_heap(ctx);
-		GC.removeRoot(ctx);
-    	GC.clrAttr(ctx, GC.BlkAttr.NO_MOVE);
-		} */
-
     duk_push_global_object(ctx._ctx);
     duk_print_alert_init(ctx._ctx, 0);
-    duk_push_c_function(ctx._ctx, &is_prime_interface, 1 /*nargs*/);
-    // We register a function in the global object to be used from javascript
-	duk_put_prop_string(ctx._ctx, -2, "is_prime");
+
+    // We register  functions in the global object to be used from javascript
+  
 	duk_push_c_function(ctx._ctx, &load, 1 /*nargs*/);
 	duk_put_prop_string(ctx._ctx, -2, "load");
 	
+    ctx.registerGlobal!is_prime;
+    ctx.registerGlobal!print_many;
+
 	while (true) 
 	{
 		char* line = readline (">");
