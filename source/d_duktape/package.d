@@ -3,10 +3,11 @@
 
     It add automatic registration of D symbol.
 */
-module duktape;
+module d_duktape;
 
 import std.stdio;
-import etc.c.duktape;
+import duk_config;
+import duktape;
 import std.string : toStringz, fromStringz;
 import std.traits;
 

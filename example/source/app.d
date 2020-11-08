@@ -1,7 +1,7 @@
 /**
     Duktape exemples.
 */
-import duktape;
+import d_duktape;
 import std.stdio;
 
 

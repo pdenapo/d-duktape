@@ -15,7 +15,10 @@
 			"lflags": ["-L$PACKAGE_DIR/lib/duktape"],
 			"libs": [
 				"duktape"
-			]
-		}
+			],
+			"dependencies": {
+				"duktape": "*"
+				}
+		}		
 	]
 }
