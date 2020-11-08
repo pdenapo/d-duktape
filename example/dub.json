@@ -1,12 +1,11 @@
 {
 	"name": "duktape-examples",
 	"authors": ["Eliott Dumeix"],
-	"description": "A minimal D application.",
+	"description": "An example using d-duktape.",
 	"license": "MIT",
 	"targetType": "executable",
 
 	"dependencies": {
-		"duktaped": {"path": "../"},
-		"vibe-d": "~>0.8.4"
+		"duktaped": {"path": "../"}
 	}
 }
