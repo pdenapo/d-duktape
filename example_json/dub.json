@@ -1,0 +1,15 @@
+{
+	"name": "example_json",
+	"authors": [
+		"Pablo De Nápoli"
+	],
+	"description": "An example using d-duktape and vibe.d json.",
+	"license": "MIT",
+	"targetType": "executable",
+	"dependencies": {
+		"d_duktape": {
+			"path": "../"
+		},
+		"vibe-d:data": "~>0.8.5"
+	}
+}
