@@ -14,25 +14,6 @@ import std.conv;
 
 import vibe.data.json;
 
-struct MyStruct
-{
-  int int_data;
-  string string_data;
-  bool boolean_data;
-  // you can mark some fields in your structure as optional
-  // so that they are not requiered to appear in your Json data
-  @optional int optional_data;
-}
-
-enum Direction { up, down, left, right }
-
-static Json get_json()
-{
-  MyStruct other_data= MyStruct(5,"good bye!",true,4);
-  Json other_json = serializeToJson(other_data);
-  return other_json;
-}
-
 extern (C) duk_ret_t int_example(duk_context *ctx) {
     Json json1 = serializeToJson(5);
     push_Json(ctx,json1);
