@@ -10,6 +10,8 @@ import duk_config;
 import duktape;
 import std.string : toStringz, fromStringz;
 import std.traits;
+import vibe.data.json;
+import d_duktape.json;
 
 enum AllMembers(alias Symbol) = __traits(allMembers, Symbol);
 enum Protection(alias Symbol) = __traits(getProtection, Symbol);
@@ -315,6 +317,9 @@ private:
                 push!Elem(ctx, elem);
                 duk_put_prop_index(ctx, arrIdx, i);
             }
+        }
+        else static if (is(T == Json)) {
+            push_Json(ctx,value);
         }
         else {
             static assert(false, T.stringof ~ " argument is not handled.");
