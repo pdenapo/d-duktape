@@ -139,13 +139,13 @@ extern (C) duk_ret_t associative_array_example(duk_context *ctx) {
     return 1; // we return something
 }
 
-
-void evaluate_js(duk_context *ctx,string line)
+string evaluate_js(duk_context *ctx,string line)
 {
     int ret = duk_peval_string(ctx, line.toStringz());
     string  result = duk_to_string(ctx, -1).to!string;
     // writeln(result);
-    //duk_pop(ctx);
+    duk_pop(ctx);
+    return result;
 }
 
 int main()
@@ -179,26 +179,42 @@ int main()
     duk_push_c_function(ctx, &associative_array_example, 1 /*nargs*/);
     duk_put_prop_string(ctx, -2, "associative_array_example");
    
-    
-    evaluate_js(ctx,"var object = int_example(); print(object);");
-    evaluate_js(ctx,"var object = string_example(); print(object);");
-    evaluate_js(ctx,"var object = boolean_example(); print(object);");
-    evaluate_js(ctx,"var object = float_example(); print(object);");
-   
-    evaluate_js(ctx,"var object = null_example(); print(object);");
-    evaluate_js(ctx,"var object = undefined_example(); print(object);");
+    const string days_in_json ="{\"Sunday\":6,\"Thursday\":3,\"Wednesday\":2,\"Saturday\":5,\"Tuesday\":1,\"Monday\":0,\"Friday\":4}";
 
-    evaluate_js(ctx,"var object = array_example(); print(object);");
-    evaluate_js(ctx,"var object = array_example2(); print(JSON.stringify(object));");
-
-
-    // print here does not give us what we want [[1,2],[2,3]] but 1,2,2,3
-    evaluate_js(ctx,"var object = associative_array_example(); print(JSON.stringify(object));");
-    
     // print(object) would give [object Object], something opaque 
     // It is better to use print(JSON.stringify(object)) when debugging javascript code!
  
-    evaluate_js(ctx,"var object = associative_array_example(); print(object[\"Saturday\"]);");
+     auto test_cases = [ ["int_example()","5"],
+                      ["string_example()","\"five\""],
+                      ["boolean_example()","true"],
+                      ["float_example()","1.2"],
+                      ["null_example()","null"],
+                      ["undefined_example()","undefined"],
+                      ["JSON.stringify(array_example())","[1,2,3]"],
+                      ["JSON.stringify(array_example2())","[[1,2],[2,3]]"],
+                      ["JSON.stringify(associative_array_example())",days_in_json],
+                      ["var object = associative_array_example(); object[\"Saturday\"]","5"]
+                    ];
+
+    bool all_passed=true;
+    foreach (c;test_cases)
+    {
+      string result = evaluate_js(ctx,c[0]);
+      bool test_passed = result==c[1];
+      write(result,"\t");
+      if (test_passed)
+            writeln("TEST PASSED");
+      else 
+            writeln("TEST FAILED");
+      all_passed = all_passed && test_passed;    
+    }
+
+    if (all_passed)
+        writeln("All test passed.");
+    else
+        writeln("Some tests failed.");
+
+    duk_destroy_heap(ctx);
 
     return 0;
 }
