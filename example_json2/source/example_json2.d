@@ -25,10 +25,17 @@ struct MyStruct
 
 static Json get_json()
 {
-  MyStruct other_data= MyStruct(5,"good bye!",true,4);
-  Json other_json = serializeToJson(other_data);
-  return other_json;
+  MyStruct my_data= MyStruct(5,"good bye!",true,4);
+  Json my_json = serializeToJson(my_data);
+  return my_json;
 }
+
+static string put_json(Json my_json)
+{
+  MyStruct my_data =  deserializeJson!MyStruct(my_json);
+  return my_data.string_data;
+}
+
 
 int main()
 {
@@ -36,6 +43,7 @@ int main()
     duk_print_alert_init(ctx._ctx, 0);
 
     ctx.registerGlobal!get_json;
+    ctx.registerGlobal!put_json;
 
     ctx.evalString("var object=get_json();print(JSON.stringify(object));print(object.string_data);");
 
