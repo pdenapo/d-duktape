@@ -378,7 +378,6 @@ private:
                 }
             };
         }
-        // Json data should be treated here
         else {
             static assert(false, T.stringof ~ " argument is not handled.");
         }

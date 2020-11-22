@@ -45,7 +45,42 @@ void push_Json(duk_context *ctx,Json json)
                         };               
                         break;
    // the case bigInt is not supperted 
-   default: writeln("Unhandled type in json");
+   default: writeln("Unhandled type in push_Json");
                 assert(0);   
    } 
+}
+
+Json duk_to_Json(duk_context *ctx,  duk_idx_t idx)
+{
+  Json result;
+  duk_int_t which_type = duk_get_type(ctx, idx);
+  switch (which_type)
+  {
+    case DUK_TYPE_NULL:
+          result=Json(null);
+          break;
+
+    case DUK_TYPE_BOOLEAN: 
+          result=Json(duk_get_boolean(ctx, idx));
+          break;   
+
+    case DUK_TYPE_NUMBER: 
+          result=Json(duk_get_number(ctx, idx));
+          break;
+
+    case DUK_TYPE_STRING:
+          auto s=fromStringz(duk_get_string(ctx, idx));
+          result= Json(to!string(s));
+          break;
+
+   case DUK_TYPE_OBJECT:
+        writeln("Es un objeto");
+        break;
+
+
+   // the case bigInt is not supperted 
+   default: writeln("Unhandled type in duk_to_Json ",which_type);
+                assert(0);       
+  }
+  return result;
 }

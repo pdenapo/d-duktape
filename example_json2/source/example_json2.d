@@ -1,10 +1,12 @@
 /**
-   This example shows that a function returning Json is automatically wrapped
-   to a javascript function returning an object
+  Now we want to go from a javascript object o a Json structure.
 */
 
 import d_duktape;
-//import  d_duktape.json;
+import duktape;
+import duk_extras.print_alert;
+import  d_duktape.json;
+
 
 import std.stdio;
 import std.string;
@@ -13,40 +15,55 @@ import duk_extras.print_alert;
 
 import vibe.data.json;
 
-struct MyStruct
+string evaluate_js(duk_context *ctx,string line)
 {
-  int int_data;
-  string string_data;
-  bool boolean_data;
-  // you can mark some fields in your structure as optional
-  // so that they are not requiered to appear in your Json data
-  @optional int optional_data;
+    int ret = duk_peval_string(ctx, line.toStringz());
+    string  result = duk_to_string(ctx, -1).to!string;
+//    duk_pop(ctx);
+    return result;
 }
-
-static Json get_json()
-{
-  MyStruct my_data= MyStruct(5,"good bye!",true,4);
-  Json my_json = serializeToJson(my_data);
-  return my_json;
-}
-
-static string put_json(Json my_json)
-{
-  MyStruct my_data =  deserializeJson!MyStruct(my_json);
-  return my_data.string_data;
-}
-
 
 int main()
 {
-    auto ctx = new DukContext();
-    duk_print_alert_init(ctx._ctx, 0);
+    duk_context *ctx = duk_create_heap_default();
+    if (!ctx) {
+        writeln("Failed to create a Duktape heap.");
+        return 1;
+    }
+    duk_push_global_object(ctx);
+    duk_print_alert_init(ctx, 0);
 
-    ctx.registerGlobal!get_json;
-    ctx.registerGlobal!put_json;
+    // Lista de casos para testear
+    // comando en Js y su representación en D
 
-    ctx.evalString("var object=get_json();print(JSON.stringify(object));print(object.string_data);");
+     auto test_cases = [["1;","1"],
+                       ["\"hola\"","hola"],
+                       ["1==2","false"],
+                       ["null","null"]];
+
+
+         bool all_passed=true;
+    foreach (c;test_cases)
+    {
+      evaluate_js(ctx,c[0]);
+      Json result = duk_to_Json(ctx,-1);
+
+      bool test_passed = result==c[1];
+      write(result,"\t");
+      if (test_passed)
+            writeln("TEST PASSED");
+      else 
+            writeln("TEST FAILED");
+      all_passed = all_passed && test_passed;    
+    }
+
+    if (all_passed)
+        writeln("All test passed.");
+    else
+        writeln("Some tests failed.");
+
+
+    duk_destroy_heap(ctx);
 
     return 0;
 }
-
