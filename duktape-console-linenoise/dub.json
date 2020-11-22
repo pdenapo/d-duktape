@@ -4,10 +4,9 @@
 	],
 	"copyright": "Copyright © 2020, Pablo De Nápoli",
 	"dependencies": {
-		"d_duktape": {
+		"d-duktape": {
 			"path": "../"
 		},
-		"duktape": "*",
 		"readline": "~>0.2.0"
 	},
 	"description": "A example program showing how to use Duketape from D",
