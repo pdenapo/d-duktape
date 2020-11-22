@@ -9,20 +9,7 @@ import core.memory;
 import duktape;
 import duk_extras.print_alert;
 import d_duktape;
-
-import gnu.readline;
-
-// We want to use a function not declared in the module gnu.readline
-// declared in the header readline/history.h
-extern (C) 
-{
-  void add_history (const char *);
-}
-
-static void print(string msg)
-{
-    writeln(msg);
-}
+import deimos.linenoise;
 
 /* An example for the duketaped documentation*/
 /* A pure D function */
@@ -65,7 +52,7 @@ static void print_many(int times,string msg)
 extern (C) duk_ret_t load(duk_context *ctx) {
     const(char)* file_name = duk_require_string(ctx, 0);
 	push_file_as_string(ctx, file_name);
-	if (duk_peval(ctx) != 0) {
+    if (duk_peval(ctx) != 0) {
     /* Use duk_safe_to_string() to convert error into string.  This API
      * call is guaranteed not to throw an error during the coercion.
      */
@@ -76,9 +63,49 @@ extern (C) duk_ret_t load(duk_context *ctx) {
 	return 1;
 }
 
-int main()
+// We define the possible completions for linenoise
+
+extern(C) void completion(const char *buf, linenoiseCompletions *lc) {
+    if (buf[0] == 'a') {
+        linenoiseAddCompletion(lc,"alert");
+    }
+    else if (buf[0] == 'p') {
+        linenoiseAddCompletion(lc,"print");
+        linenoiseAddCompletion(lc,"print_many");
+    }
+    else if (buf[0] == 'i') {
+        linenoiseAddCompletion(lc,"is_prime");
+    }
+
+}
+
+int main(string[] args)
 {
-	writeln("Duketape console using d-duktape y GNU Readline");
+    auto prgname = args[0];
+    writeln("Duketape console using d-duktape and linenoise");
+
+    /* Parse options, with --multiline we enable multi line editing. */
+    foreach (arg; args[1 .. $]) {
+        if (arg == "--multiline") {
+            linenoiseSetMultiLine(1);
+            writeln("Multi-line mode enabled.");
+        } else if (arg == "--keycodes") {
+            linenoisePrintKeyCodes();
+            return 0;
+        } else {
+            stderr.writefln("Usage: %s [--multiline] [--keycodes]", prgname);
+            return 1;
+        }
+    }
+
+    /* Set the completion callback. This will be called every time the
+     * user uses the <tab> key. */
+    linenoiseSetCompletionCallback(&completion);
+
+    /* Load history from file. The history file is just a plain text file
+     * where entries are separated by newlines. */
+    linenoiseHistoryLoad("history.txt"); /* Load the history at startup */
+
 
 	auto ctx = new DukContext();
     //duk_context *ctx = duk_create_heap_default();
@@ -86,24 +113,27 @@ int main()
         writeln("Failed to create a Duktape heap.");
         return 1;
     }
-
     duk_push_global_object(ctx._ctx);
     duk_print_alert_init(ctx._ctx, 0);
 
-    // We register  functions in the global object to be used from javascript
+    // We register some functions in the global object to be used from javascript
   
 	duk_push_c_function(ctx._ctx, &load, 1 /*nargs*/);
 	duk_put_prop_string(ctx._ctx, -2, "load");
 	
+    // some functions written in D
+
     ctx.registerGlobal!is_prime;
     ctx.registerGlobal!print_many;
 
 	while (true) 
 	{
-		char* line = readline (">");
+		char* line = linenoise(">");
 		if (!line)
         	break; 	
-		add_history (line);
+        linenoiseHistoryAdd(line); /* Add to the history. */
+        linenoiseHistorySave("history.txt"); /* Save the history on disk. */
+
 		int ret = duk_peval_string(ctx._ctx, line);
 
         if (ret != 0) {

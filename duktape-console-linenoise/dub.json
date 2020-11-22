@@ -1,0 +1,22 @@
+{
+	"authors": [
+		"Pablo De Nápoli"
+	],
+	"copyright": "Copyright © 2020, Pablo De Nápoli",
+	"dependencies": {
+		"d_duktape": {
+			"path": "../"
+		},
+		"duktape": "*",
+		"readline": "~>0.2.0"
+	},
+	"description": "A example program showing how to use Duketape from D",
+	"license": "BSD",
+	"name": "duktape_console",
+	"preBuildCommands": [
+		"echo \"Compiling linenoise\"; cd ./C; [ -f linenoise.o ] || cc -shared -fPIC -o linenoise.o linenoise.c; echo \"Done.\""
+	],
+	"lflags": [
+		"./C/linenoise.o"
+	]
+}
