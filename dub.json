@@ -1,5 +1,5 @@
 {
-	"name": "d-duktape",
+	"name": "d_duktape",
 	"authors": ["Eliott Dumeix"],
 	"description": "duktape high level bindings",
 	"license": "MIT",
@@ -18,7 +18,7 @@
 			],
 			"dependencies": {
 				"duktape": "*",
-				"vibe-d:data": "~>0.8.5"
+				"vibe-d:data": "~>0.9.5-beta.2"
 				}
 		}		
 	]
