@@ -7,7 +7,6 @@
 		"d-duktape": {
 			"path": "../"
 		},
-		"readline": "~>0.2.0"
 	},
 	"description": "A example program showing how to use Duketape from D",
 	"license": "BSD",
