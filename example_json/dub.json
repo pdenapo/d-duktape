@@ -7,9 +7,9 @@
 	"license": "MIT",
 	"targetType": "executable",
 	"dependencies": {
-		"d_duktape": {
+		"d-duktape": {
 			"path": "../"
 		},
-		"vibe-d:data": "~>0.8.5"
+		"vibe-d:data": "~>0.9.6"
 	}
 }
