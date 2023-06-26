@@ -313,9 +313,9 @@ private:
             alias Elem = ForeachType!T;
             auto arrIdx = duk_push_array(ctx);
 
-            foreach(uint i, Elem elem; value) {
+            foreach(i, Elem elem; value) {
                 push!Elem(ctx, elem);
-                duk_put_prop_index(ctx, arrIdx, i);
+                duk_put_prop_index(ctx, arrIdx,cast(uint) i);
             }
         }
         else static if (is(T == Json)) {

@@ -6,6 +6,6 @@
 	"targetType": "executable",
 
 	"dependencies": {
-		"d_duktape": {"path": "../"}
+		"d-duktape": {"path": "../"}
 	}
 }

@@ -45,7 +45,7 @@ void push_Json(duk_context* ctx, Json json)
       push_Json(ctx, value);
       duk_put_prop_index(ctx, arr_idx, i);
       i++;
-    };
+    }
     break;
   case Json.Type.object:
     duk_idx_t obj_idx = duk_push_object(ctx);
@@ -53,7 +53,7 @@ void push_Json(duk_context* ctx, Json json)
     {
       push_Json(ctx, value);
       duk_put_prop_string(ctx, obj_idx, key.toStringz());
-    };
+    }
     break;
     // the case bigInt is not supperted 
   default:
