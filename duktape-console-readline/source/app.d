@@ -5,6 +5,7 @@ import std.string;
 import std.conv;
 import core.stdc.stdio: printf;
 import core.memory;
+import core.sys.posix.stdio:posix_getdelim=getdelim;
 // The modules to use duketape
 import duktape;
 import duk_extras.print_alert;
@@ -39,7 +40,7 @@ static void push_file_as_string(duk_context *ctx, const char *filename) {
 
     f = fopen(filename, "rb");
     if (f) {
-        len =  getdelim(&buffer, &len, '\0',f);
+        len =  posix_getdelim(&buffer, &len, '\0',f);
         fclose(f);
 		// printf("código leído: \n %s \n", buffer);
         duk_push_lstring(ctx, cast(const char *) buffer, cast(duk_size_t) len);
