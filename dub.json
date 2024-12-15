@@ -18,7 +18,7 @@
 			],
 			"dependencies": {
 				"duktape": "*",
-				"vibe-d:data": "~>0.9.6"
+				"vibe-d:data": "~>0.10.1"
 				}
 		}		
 	]
